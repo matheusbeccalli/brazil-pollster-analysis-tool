@@ -30,17 +30,28 @@ def assemble():
 
 
 @cli.command()
-@click.option("--since", default=2014, type=int, help="Start year for analysis window.")
+@click.option("--since", default=config.DEFAULT_SINCE_YEAR, type=int,
+              help="Start year for analysis window.")
 def analyze(since):
     """Compute accuracy metrics and pollster rankings."""
-    click.echo("Analyze not yet implemented.")
+    from pollster.stages.analyze import analyze_data
+    data_dir = pathlib.Path(config.DATA_DIR_NAME)
+    con = db_module.get_connection(data_dir)
+    analyze_data(con, since=since)
+    con.close()
 
 
 @cli.command()
-@click.option("--since", default=2014, type=int, help="Start year for analysis window.")
+@click.option("--since", default=config.DEFAULT_SINCE_YEAR, type=int,
+              help="Start year for analysis window.")
 def report(since):
     """Generate HTML accuracy report."""
-    click.echo("Report not yet implemented.")
+    from pollster.stages.report import generate_report
+    data_dir = pathlib.Path(config.DATA_DIR_NAME)
+    con = db_module.get_connection(data_dir)
+    output_path = data_dir / "reports" / "pollster_accuracy_report.html"
+    generate_report(con, output_path)
+    con.close()
 
 
 @cli.command()

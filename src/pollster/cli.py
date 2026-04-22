@@ -1,4 +1,7 @@
+import pathlib
 import click
+from pollster import config
+from pollster import db as db_module
 
 
 @click.group()
@@ -11,13 +14,19 @@ def cli():
 @click.option("--force", is_flag=True, help="Re-download even if data exists.")
 def fetch(force):
     """Download poll and results data from Base dos Dados."""
-    click.echo("Fetch not yet implemented.")
+    from pollster.stages.fetch import fetch_data
+    data_dir = pathlib.Path(config.DATA_DIR_NAME)
+    fetch_data(data_dir, force=force)
 
 
 @cli.command()
 def assemble():
     """Build unified polls-vs-actual dataset."""
-    click.echo("Assemble not yet implemented.")
+    from pollster.stages.assemble import assemble_data
+    data_dir = pathlib.Path(config.DATA_DIR_NAME)
+    con = db_module.get_connection(data_dir)
+    assemble_data(con)
+    con.close()
 
 
 @cli.command()

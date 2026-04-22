@@ -1,0 +1,22 @@
+from pollster.config import ELECTIONS, PARTY_LEANING, POLLSTER_MERGES
+
+
+def test_elections_have_both_rounds():
+    for year, dates in ELECTIONS.items():
+        assert "round_1" in dates, f"{year} missing round_1"
+        assert "round_2" in dates, f"{year} missing round_2"
+
+
+def test_elections_cover_required_years():
+    for year in [2014, 2018, 2022]:
+        assert year in ELECTIONS, f"Missing election year {year}"
+
+
+def test_party_leaning_has_major_parties():
+    assert PARTY_LEANING["PT"] == "left"
+    assert PARTY_LEANING["PL"] == "right"
+    assert PARTY_LEANING["MDB"] == "center"
+
+
+def test_pollster_merges_ibope_ipec():
+    assert POLLSTER_MERGES.get("Ibope") == POLLSTER_MERGES.get("Ipec")

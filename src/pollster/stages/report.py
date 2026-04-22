@@ -119,7 +119,13 @@ def generate_report(con: duckdb.DuckDBPyConnection, output_path: pathlib.Path) -
     rankings_by_round = con.execute("SELECT * FROM pollster_rankings_by_round").fetchdf()
     rankings_by_race = con.execute("SELECT * FROM pollster_rankings_by_race_type").fetchdf()
 
-    rankings = all_rankings[all_rankings["n_races"] >= MIN_RACES].copy()
+    presidential_pollsters = set(
+        metrics.loc[metrics["cargo"].str.lower() == "presidente", "pollster_display_name"]
+    ) if "cargo" in metrics.columns else set()
+    rankings = all_rankings[
+        (all_rankings["n_races"] >= MIN_RACES)
+        & (all_rankings["pollster_display_name"].isin(presidential_pollsters))
+    ].copy() if presidential_pollsters else all_rankings[all_rankings["n_races"] >= MIN_RACES].copy()
     qualified_pollsters = set(rankings["pollster_display_name"])
     metrics_filtered = metrics[metrics["pollster_display_name"].isin(qualified_pollsters)]
     rankings_by_year_f = rankings_by_year[rankings_by_year["pollster_display_name"].isin(qualified_pollsters)]
@@ -139,7 +145,8 @@ def generate_report(con: duckdb.DuckDBPyConnection, output_path: pathlib.Path) -
     <p>Analysis of <strong>{n_polls}</strong> final pre-election polls from
     <strong>{n_pollsters_total}</strong> polling institutes.
     This report focuses on the <strong>{n_pollsters_qualified}</strong> pollsters
-    with at least {MIN_RACES} race observations — enough data for meaningful comparison.
+    that have polled at least one presidential race and have {MIN_RACES}+ total observations
+    (including gubernatorial) — enough data for meaningful comparison.
     Top 5 most accurate (by mean absolute error):</p>
     <ol>{"".join(f"<li><strong>{r['pollster_display_name']}</strong> — MAE {r['mean_mae']:.2f} pp ({int(r['n_races'])} races)</li>" for _, r in top5.iterrows())}</ol>
     <p class="footnote">Data: Poder360 via Base dos Dados. Official results: TSE.</p>

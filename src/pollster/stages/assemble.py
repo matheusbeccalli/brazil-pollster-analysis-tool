@@ -10,15 +10,21 @@ from pollster.utils.rebase import rebase_to_valid_votes
 from pollster.utils.candidates import match_candidate_name
 
 
+def _normalize_uf(df: pd.DataFrame) -> pd.DataFrame:
+    df["sigla_uf"] = df["sigla_uf"].fillna("BR")
+    return df
+
+
 def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     df = con.execute("""
         WITH aggregated AS (
-            SELECT ano, turno, cargo, sigla_uf,
+            SELECT ano, turno, cargo,
+                   COALESCE(sigla_uf, 'BR') AS sigla_uf,
                    sequencial_candidato, sigla_partido,
                    SUM(votos) AS votos
             FROM tse_results
             WHERE votos IS NOT NULL
-            GROUP BY ano, turno, cargo, sigla_uf, sequencial_candidato, sigla_partido
+            GROUP BY ano, turno, cargo, COALESCE(sigla_uf, 'BR'), sequencial_candidato, sigla_partido
         )
         SELECT *,
                SUM(votos) OVER (PARTITION BY ano, turno, cargo, sigla_uf) AS total_votos,
@@ -46,6 +52,7 @@ def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 def _select_final_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     polls = con.execute("SELECT * FROM poder360_polls").fetchdf()
     polls["data"] = pd.to_datetime(polls["data"])
+    _normalize_uf(polls)
 
     rows = []
     for (ano, turno, cargo, uf, instituto), group in polls.groupby(

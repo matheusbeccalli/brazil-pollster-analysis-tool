@@ -1,3 +1,5 @@
+import pathlib
+
 import click
 import duckdb
 import pandas as pd
@@ -91,7 +93,7 @@ def _select_scenario(poll_group: pd.DataFrame, top2_names: list[str],
     return best
 
 
-def assemble_data(con: duckdb.DuckDBPyConnection) -> None:
+def assemble_data(con: duckdb.DuckDBPyConnection, data_dir: pathlib.Path = None) -> None:
     click.echo("Building actual results from TSE data...")
     actual = _build_actual_results(con)
 
@@ -178,4 +180,10 @@ def assemble_data(con: duckdb.DuckDBPyConnection) -> None:
 
     result_df = pd.DataFrame(output_rows)
     con.execute("CREATE OR REPLACE TABLE polls_vs_actual AS SELECT * FROM result_df")
+
+    if data_dir is not None:
+        parquet_path = data_dir / "parquet" / "polls_vs_actual.parquet"
+        parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        result_df.to_parquet(parquet_path, index=False)
+
     click.echo(f"Assembled {len(result_df)} poll observations into polls_vs_actual.")

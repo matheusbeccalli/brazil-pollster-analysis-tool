@@ -25,7 +25,7 @@ def assemble():
     from pollster.stages.assemble import assemble_data
     data_dir = pathlib.Path(config.DATA_DIR_NAME)
     con = db_module.get_connection(data_dir)
-    assemble_data(con)
+    assemble_data(con, data_dir=data_dir)
     con.close()
 
 
@@ -37,7 +37,7 @@ def analyze(since):
     from pollster.stages.analyze import analyze_data
     data_dir = pathlib.Path(config.DATA_DIR_NAME)
     con = db_module.get_connection(data_dir)
-    analyze_data(con, since=since)
+    analyze_data(con, since=since, data_dir=data_dir)
     con.close()
 
 
@@ -70,8 +70,8 @@ def run(since, force):
     fetch_data(data_dir, force=force)
 
     con = db_module.get_connection(data_dir)
-    assemble_data(con)
-    analyze_data(con, since=since)
+    assemble_data(con, data_dir=data_dir)
+    analyze_data(con, since=since, data_dir=data_dir)
 
     output_path = data_dir / "reports" / "pollster_accuracy_report.html"
     generate_report(con, output_path)

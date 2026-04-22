@@ -1,3 +1,5 @@
+import pathlib
+
 import click
 import duckdb
 import numpy as np
@@ -86,7 +88,7 @@ def _compute_rankings(con: duckdb.DuckDBPyConnection, table_suffix: str = "",
     con.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM result")
 
 
-def analyze_data(con: duckdb.DuckDBPyConnection, since: int = 2014) -> None:
+def analyze_data(con: duckdb.DuckDBPyConnection, since: int = 2014, data_dir: pathlib.Path = None) -> None:
     click.echo(f"Computing poll-level metrics (since {since})...")
     _compute_poll_level_metrics(con, since)
     count = con.execute("SELECT COUNT(*) FROM poll_level_metrics").fetchone()[0]
@@ -103,5 +105,14 @@ def analyze_data(con: duckdb.DuckDBPyConnection, since: int = 2014) -> None:
 
     click.echo("Computing rankings by race type...")
     _compute_rankings(con, "_by_race_type", ["cargo"])
+
+    if data_dir is not None:
+        parquet_dir = data_dir / "parquet"
+        parquet_dir.mkdir(parents=True, exist_ok=True)
+        for table_name in ["poll_level_metrics", "pollster_rankings",
+                           "pollster_rankings_by_year", "pollster_rankings_by_round",
+                           "pollster_rankings_by_race_type"]:
+            df = con.execute(f"SELECT * FROM {table_name}").fetchdf()
+            df.to_parquet(parquet_dir / f"{table_name}.parquet", index=False)
 
     click.echo("Analysis complete.")

@@ -33,8 +33,8 @@ def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
     candidates = con.execute("SELECT * FROM tse_candidates").fetchdf()
     top2 = top2.merge(
-        candidates[["ano", "sequencial_candidato", "nome", "nome_urna", "sigla_partido"]].rename(
-            columns={"sigla_partido": "cand_partido"}
+        candidates[["ano", "sequencial", "nome", "nome_urna", "sigla_partido"]].rename(
+            columns={"sigla_partido": "cand_partido", "sequencial": "sequencial_candidato"}
         ),
         on=["ano", "sequencial_candidato"],
         how="left",

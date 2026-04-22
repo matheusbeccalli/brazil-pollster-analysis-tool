@@ -20,8 +20,8 @@ WHERE LOWER(cargo) IN ('presidente', 'governador')
 """
 
 CANDIDATES_QUERY = f"""
-SELECT ano, tipo_eleicao, sigla_uf, cargo, numero_candidato,
-       sequencial_candidato, id_candidato_bd, nome, nome_urna, sigla_partido
+SELECT ano, tipo_eleicao, sigla_uf, cargo, numero,
+       sequencial, nome, nome_urna, sigla_partido
 FROM `{BIGQUERY_TABLES['candidates']}`
 WHERE LOWER(cargo) IN ('presidente', 'governador')
 """

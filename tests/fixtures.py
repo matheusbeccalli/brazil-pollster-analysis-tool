@@ -69,20 +69,20 @@ def make_candidates_df():
     """Candidate details for resolving names."""
     rows = [
         {"ano": 2022, "tipo_eleicao": "eleicao ordinaria", "sigla_uf": "BR",
-         "cargo": "presidente", "numero_candidato": "13", "sequencial_candidato": "seq1",
-         "id_candidato_bd": "bd_seq1", "nome": "LUIZ INACIO LULA DA SILVA",
+         "cargo": "presidente", "numero": "13", "sequencial": "seq1",
+         "nome": "LUIZ INACIO LULA DA SILVA",
          "nome_urna": "LULA", "sigla_partido": "PT"},
         {"ano": 2022, "tipo_eleicao": "eleicao ordinaria", "sigla_uf": "BR",
-         "cargo": "presidente", "numero_candidato": "22", "sequencial_candidato": "seq2",
-         "id_candidato_bd": "bd_seq2", "nome": "JAIR MESSIAS BOLSONARO",
+         "cargo": "presidente", "numero": "22", "sequencial": "seq2",
+         "nome": "JAIR MESSIAS BOLSONARO",
          "nome_urna": "BOLSONARO", "sigla_partido": "PL"},
         {"ano": 2022, "tipo_eleicao": "eleicao ordinaria", "sigla_uf": "BR",
-         "cargo": "presidente", "numero_candidato": "15", "sequencial_candidato": "seq3",
-         "id_candidato_bd": "bd_seq3", "nome": "SIMONE NASSAR TEBET",
+         "cargo": "presidente", "numero": "15", "sequencial": "seq3",
+         "nome": "SIMONE NASSAR TEBET",
          "nome_urna": "TEBET", "sigla_partido": "MDB"},
         {"ano": 2022, "tipo_eleicao": "eleicao ordinaria", "sigla_uf": "BR",
-         "cargo": "presidente", "numero_candidato": "12", "sequencial_candidato": "seq4",
-         "id_candidato_bd": "bd_seq4", "nome": "CIRO FERREIRA GOMES",
+         "cargo": "presidente", "numero": "12", "sequencial": "seq4",
+         "nome": "CIRO FERREIRA GOMES",
          "nome_urna": "CIRO", "sigla_partido": "PDT"},
     ]
     return pd.DataFrame(rows)

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pollster"
+version = "0.1.0"
+description = "Brazilian election pollster accuracy analysis tool"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "duckdb>=1.0",
+    "basedosdados>=2.0",
+    "google-cloud-bigquery>=3.0",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "rapidfuzz>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-tmp-files>=0.0.2",
+]
+
+[project.scripts]
+pollster = "pollster.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pollster"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -19,7 +19,7 @@ def db_with_analysis(tmp_data_dir):
          "candidate_2_actual_valid_pct": 43.20},
     ])
     rankings = pd.DataFrame([
-        {"pollster_display_name": "Datafolha", "n_races": 1,
+        {"pollster_display_name": "Datafolha", "n_races": 10,
          "mean_mae": 4.67, "median_mae": 4.67,
          "mean_margin_error": 9.35,
          "mean_left_bias": 1.57, "mean_right_bias": -7.78,

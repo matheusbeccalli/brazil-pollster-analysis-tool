@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Python CLI tool that ranks Brazilian polling institutes by prediction accuracy, comparing their final pre-election polls against official TSE election results (valid votes). Covers presidential and gubernatorial races across 2014, 2018, and 2022 (both rounds). Data is downloaded once from Base dos Dados and stored locally in a DuckDB database for fast, reproducible analysis.
+A Python CLI tool that ranks Brazilian polling institutes by prediction accuracy, comparing their final pre-election polls against official TSE election results (valid votes). Default analysis window is 2014–2022 (presidential and gubernatorial, both rounds), but all data from 2000 onward is downloaded and available for extended analysis. Data is downloaded once from Base dos Dados and stored locally in a DuckDB database for fast, reproducible analysis.
 
 ## Investigation Findings
 
@@ -22,6 +22,7 @@ This means the entire extraction problem is solved: two BigQuery datasets contai
 - **Local storage:** DuckDB database file (`data/pollster.duckdb`) with tables backed by Parquet files. Portable, queryable with SQL, fast.
 - **Output:** Static HTML report (single self-contained file).
 - **Pollster identity:** `instituto` string column from Poder360 data. Optional override/merge table in config for known lineages (e.g., IBOPE → Ipec). We also store each poll's `numero_registro` (TSE protocol) for cross-referencing.
+- **Analysis window:** Default `--since 2014` for headline rankings (modern polling methods, relevant political landscape). All data from 2000 onward is fetched and stored locally so extended windows are available via `--since 2000` or any year. The `fetch` stage always downloads the full 2000+ dataset — filtering happens at analysis time, not download time.
 - **Poll selection:** Last poll per pollster per race, regardless of days before election. Equal weight.
 - **Bias analysis:** Party-based left/right classification via hardcoded party-to-leaning map.
 - **Pipeline design:** Re-runnable staged pipeline. Adding a future election year requires only re-running `fetch` (once Base dos Dados covers that year) plus config additions.
@@ -94,7 +95,7 @@ If the Python package has issues, Base dos Dados also exposes Parquet files via 
 
 **1. Poll data** — `basedosdados.br_poder360_pesquisas.microdados`
 
-Filter at query time to: `ano IN (2014, 2018, 2022) AND cargo IN ('PRESIDENTE', 'GOVERNADOR')`.
+Filter at query time to: `cargo IN ('PRESIDENTE', 'GOVERNADOR')`. All years from 2000 onward are downloaded (the analysis window is applied later, at the assemble/analyze stage).
 
 Columns captured:
 - `id_pesquisa`, `id_cenario`, `id_candidato_poder360` — unique row keys
@@ -111,7 +112,7 @@ Saved as `data/parquet/poder360_pesquisas.parquet`.
 
 **2. Official election results** — `basedosdados.br_tse_eleicoes.resultados_candidato`
 
-Filter at query time to: `ano IN (2014, 2018, 2022) AND cargo IN ('PRESIDENTE', 'GOVERNADOR')`.
+Filter at query time to: `cargo IN ('PRESIDENTE', 'GOVERNADOR')`. All years from 1994 onward are downloaded.
 
 Columns captured:
 - `ano`, `turno`, `tipo_eleicao`, `sigla_uf`
@@ -219,7 +220,7 @@ Stored as a materialized DuckDB table and also written to `data/parquet/polls_vs
 
 ## Stage 3: Analyze (`pollster analyze`)
 
-Operates on `polls_vs_actual`. Produces several output tables in DuckDB.
+Operates on `polls_vs_actual`. Accepts `--since YEAR` (default 2014) to filter the analysis window. Produces several output tables in DuckDB.
 
 ### Per-poll metrics (`poll_level_metrics`)
 
@@ -298,7 +299,7 @@ Prints results as a formatted table. Supports `--format csv|json|parquet` for ex
 
 All hardcoded domain knowledge in one place:
 
-- **Election dates:** year → {round_1_date, round_2_date} — used for the "poll before election day" filter
+- **Election dates:** year → {round_1_date, round_2_date} for every general election year from 2002 onward (2002, 2006, 2010, 2014, 2018, 2022) — used for the "poll before election day" filter. Pre-2002 dates added if needed.
 - **Pollster merges:** `{raw_name: canonical_name}` dict for known lineages (e.g., IBOPE/Ipec)
 - **Pollster display aliases:** `{raw_name: clean_name}` for cosmetic cleanups
 - **Party-to-leaning map:** `{party_abbr: "left" | "center" | "right"}`
@@ -309,9 +310,9 @@ All hardcoded domain knowledge in one place:
 ### Adding a Future Election (e.g., 2026)
 
 1. Wait for Base dos Dados to update `br_poder360_pesquisas.microdados` and `br_tse_eleicoes.resultados_candidato` with 2026 data
-2. Add 2026 dates to `config.py`
+2. Add 2026 election dates to `config.py`
 3. Add any new pollsters / party mappings
-4. Run `pollster fetch --force` to re-download, then `pollster run` for full pipeline
+4. Run `pollster fetch --force` to re-download, then `pollster run` for full pipeline (2026 is automatically included since it falls within `--since 2014`)
 
 ---
 

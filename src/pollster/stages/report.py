@@ -30,7 +30,7 @@ def _mae_bar_chart(rankings: pd.DataFrame) -> str:
     fig, ax = plt.subplots(figsize=(12, max(4, len(rankings) * 0.4)))
     rankings_sorted = rankings.sort_values("mean_mae")
     y_pos = range(len(rankings_sorted))
-    bars = ax.barh(
+    ax.barh(
         y_pos, rankings_sorted["mean_mae"],
         xerr=[
             rankings_sorted["mean_mae"] - rankings_sorted["mae_ci_low"],
@@ -40,8 +40,8 @@ def _mae_bar_chart(rankings: pd.DataFrame) -> str:
     )
     ax.set_yticks(y_pos)
     ax.set_yticklabels(rankings_sorted["pollster_display_name"])
-    ax.set_xlabel("Mean Absolute Error (pp)")
-    ax.set_title("Pollster Accuracy Ranking (with 95% CI)")
+    ax.set_xlabel("Erro Absoluto Medio (pp)")
+    ax.set_title("Ranking de Precisao dos Institutos (com IC 95%)")
     ax.invert_yaxis()
     return _fig_to_svg(fig)
 
@@ -61,9 +61,9 @@ def _margin_scatter(metrics: pd.DataFrame) -> str:
         max(ax.get_xlim()[1], ax.get_ylim()[1]),
     ]
     ax.plot(lims, lims, "k--", alpha=0.3, linewidth=1)
-    ax.set_xlabel("Actual Margin (pp)")
-    ax.set_ylabel("Predicted Margin (pp)")
-    ax.set_title("Predicted vs. Actual Margin")
+    ax.set_xlabel("Margem Real (pp)")
+    ax.set_ylabel("Margem Prevista (pp)")
+    ax.set_title("Margem Prevista vs. Margem Real")
     if len(pollsters) <= 15:
         ax.legend(fontsize=7, loc="best")
     return _fig_to_svg(fig)
@@ -84,8 +84,8 @@ def _heatmap(rankings_by_year: pd.DataFrame) -> str:
             val = pivot.values[i, j]
             if not np.isnan(val):
                 ax.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=8)
-    ax.set_title("Mean MAE by Pollster × Election Year")
-    fig.colorbar(im, ax=ax, label="MAE (pp)")
+    ax.set_title("EAM por Instituto x Ano Eleitoral")
+    fig.colorbar(im, ax=ax, label="EAM (pp)")
     return _fig_to_svg(fig)
 
 
@@ -140,45 +140,45 @@ def generate_report(con: duckdb.DuckDBPyConnection, output_path: pathlib.Path) -
     sections = []
 
     sections.append(f"""
-    <h1>Brazilian Election Pollster Accuracy Report</h1>
-    <h2>Executive Summary</h2>
-    <p>Analysis of <strong>{n_polls}</strong> final pre-election polls from
-    <strong>{n_pollsters_total}</strong> polling institutes.
-    This report focuses on the <strong>{n_pollsters_qualified}</strong> pollsters
-    that have polled at least one presidential race and have {MIN_RACES}+ total observations
-    (including gubernatorial) — enough data for meaningful comparison.
-    Top 5 most accurate (by mean absolute error):</p>
-    <ol>{"".join(f"<li><strong>{r['pollster_display_name']}</strong> — MAE {r['mean_mae']:.2f} pp ({int(r['n_races'])} races)</li>" for _, r in top5.iterrows())}</ol>
-    <p class="footnote">Data: Poder360 via Base dos Dados. Official results: TSE.</p>
+    <h1>Relatorio de Precisao dos Institutos de Pesquisa Eleitoral</h1>
+    <h2>Resumo Executivo</h2>
+    <p>Analise de <strong>{n_polls}</strong> pesquisas finais pre-eleitorais de
+    <strong>{n_pollsters_total}</strong> institutos de pesquisa.
+    Este relatorio foca nos <strong>{n_pollsters_qualified}</strong> institutos
+    que pesquisaram ao menos uma eleicao presidencial e possuem {MIN_RACES}+ observacoes totais
+    (incluindo governadoriais) — dados suficientes para uma comparacao significativa.
+    Os 5 mais precisos (por erro absoluto medio):</p>
+    <ol>{"".join(f"<li><strong>{r['pollster_display_name']}</strong> — EAM {r['mean_mae']:.2f} pp ({int(r['n_races'])} disputas)</li>" for _, r in top5.iterrows())}</ol>
+    <p class="footnote">Dados: Poder360 via Base dos Dados. Resultados oficiais: TSE.</p>
     """)
 
     sections.append("""
     <div class="methodology">
-    <h2>How to Read the Metrics</h2>
-    <p>All error values are in <strong>percentage points (pp)</strong>. For example, if a pollster predicted
-    a candidate would get 45% and the actual result was 48%, the error is 3 pp.</p>
+    <h2>Como Ler as Metricas</h2>
+    <p>Todos os valores de erro sao em <strong>pontos percentuais (pp)</strong>. Por exemplo, se um instituto
+    previu que um candidato obteria 45% e o resultado real foi 48%, o erro e de 3 pp.</p>
     <table class="ranking-table">
-    <tr><th>Column</th><th>What it means</th><th>How to interpret</th></tr>
-    <tr><td><strong>N</strong></td><td>Number of races observed</td>
-        <td>More races = more reliable ranking. A pollster with 50 races is much more trustworthy than one with 5.</td></tr>
-    <tr><td><strong>Mean MAE</strong></td><td>Mean Absolute Error averaged over the top-2 candidates</td>
-        <td><strong>The primary accuracy metric.</strong> Lower is better. A MAE of 3 pp means the pollster's predictions
-        were off by an average of 3 percentage points per candidate. Under 5 pp is good; over 10 pp is poor.</td></tr>
-    <tr><td><strong>Median MAE</strong></td><td>The middle value of all MAE observations</td>
-        <td>Less sensitive to outliers than the mean. If median is much lower than mean, the pollster had a few very bad misses
-        but is usually decent.</td></tr>
-    <tr><td><strong>CI Low / CI High</strong></td><td>95% bootstrap confidence interval for the mean MAE</td>
-        <td>The true average error likely falls in this range. Wider intervals mean less certainty
-        (usually because the pollster has fewer observations).</td></tr>
-    <tr><td><strong>Margin Error</strong></td><td>Average error in the predicted gap between the top-2 candidates</td>
-        <td>Measures how well the pollster captured the <em>competitive dynamic</em> of the race, not just individual vote shares.
-        A pollster can have low MAE but high margin error if errors on both candidates go in the same direction.</td></tr>
-    <tr><td><strong>Left Bias</strong></td><td>Average signed error for left-leaning candidates (positive = overestimated)</td>
-        <td>Positive values mean the pollster systematically overestimates left-leaning candidates.
-        Negative means underestimation. Values near zero indicate no systematic bias.</td></tr>
-    <tr><td><strong>Right Bias</strong></td><td>Average signed error for right-leaning candidates (positive = overestimated)</td>
-        <td>Same interpretation as Left Bias but for right-leaning candidates.
-        A pollster that overestimates the left will typically underestimate the right (and vice versa).</td></tr>
+    <tr><th>Coluna</th><th>O que significa</th><th>Como interpretar</th></tr>
+    <tr><td><strong>N</strong></td><td>Numero de disputas observadas</td>
+        <td>Mais disputas = ranking mais confiavel. Um instituto com 50 disputas e muito mais confiavel que um com 5.</td></tr>
+    <tr><td><strong>EAM</strong></td><td>Erro Absoluto Medio sobre os 2 candidatos mais votados</td>
+        <td><strong>A principal metrica de precisao.</strong> Menor e melhor. Um EAM de 3 pp significa que as previsoes
+        do instituto erraram em media 3 pontos percentuais por candidato. Abaixo de 5 pp e bom; acima de 10 pp e ruim.</td></tr>
+    <tr><td><strong>Mediana EAM</strong></td><td>O valor central de todas as observacoes de EAM</td>
+        <td>Menos sensivel a valores extremos que a media. Se a mediana for muito menor que a media, o instituto
+        teve alguns erros muito grandes, mas geralmente e razoavel.</td></tr>
+    <tr><td><strong>IC Inf / IC Sup</strong></td><td>Intervalo de confianca bootstrap de 95% para o EAM medio</td>
+        <td>O erro medio verdadeiro provavelmente esta neste intervalo. Intervalos mais largos indicam menos certeza
+        (geralmente porque o instituto tem menos observacoes).</td></tr>
+    <tr><td><strong>Erro de Margem</strong></td><td>Erro medio na diferenca prevista entre os 2 candidatos mais votados</td>
+        <td>Mede o quao bem o instituto captou a <em>dinamica competitiva</em> da disputa, nao apenas os votos individuais.
+        Um instituto pode ter EAM baixo mas erro de margem alto se os erros em ambos os candidatos forem na mesma direcao.</td></tr>
+    <tr><td><strong>Vies Esq.</strong></td><td>Erro medio com sinal para candidatos de esquerda (positivo = superestimou)</td>
+        <td>Valores positivos significam que o instituto sistematicamente superestima candidatos de esquerda.
+        Negativo significa subestimacao. Valores proximos de zero indicam ausencia de vies sistematico.</td></tr>
+    <tr><td><strong>Vies Dir.</strong></td><td>Erro medio com sinal para candidatos de direita (positivo = superestimou)</td>
+        <td>Mesma interpretacao do Vies de Esquerda, mas para candidatos de direita.
+        Um instituto que superestima a esquerda tipicamente subestima a direita (e vice-versa).</td></tr>
     </table>
     </div>
     """)
@@ -187,103 +187,106 @@ def generate_report(con: duckdb.DuckDBPyConnection, output_path: pathlib.Path) -
                     "mae_ci_low", "mae_ci_high", "mean_margin_error",
                     "mean_left_bias", "mean_right_bias"]
     display_rankings = rankings[[c for c in display_cols if c in rankings.columns]].copy()
-    display_rankings.columns = ["Pollster", "N", "Mean MAE", "Median MAE",
-                                "CI Low", "CI High", "Margin Error",
-                                "Left Bias", "Right Bias"][:len(display_rankings.columns)]
-    sections.append(f"<h2>Overall Pollster Rankings</h2>"
-                    f"<p>Pollsters with {MIN_RACES}+ race observations, sorted by Mean MAE (lower is better).</p>"
+    display_rankings.columns = ["Instituto", "N", "EAM", "Mediana EAM",
+                                "IC Inf", "IC Sup", "Erro de Margem",
+                                "Vies Esq.", "Vies Dir."][:len(display_rankings.columns)]
+    sections.append(f"<h2>Ranking Geral dos Institutos</h2>"
+                    f"<p>Institutos com {MIN_RACES}+ observacoes, ordenados por EAM (menor e melhor).</p>"
                     f"{_render_table(display_rankings)}")
 
-    sections.append(f'<h2>MAE with 95% Confidence Intervals</h2>'
-                    f'<p>Horizontal bars show mean MAE; whiskers show 95% confidence interval. '
-                    f'Shorter bars and tighter whiskers indicate a more accurate and consistent pollster.</p>'
+    sections.append(f'<h2>EAM com Intervalos de Confianca de 95%</h2>'
+                    f'<p>Barras horizontais mostram o EAM medio; bigodes mostram o intervalo de confianca de 95%. '
+                    f'Barras menores e bigodes mais estreitos indicam um instituto mais preciso e consistente.</p>'
                     f'<div class="chart">{_mae_bar_chart(rankings)}</div>')
 
     if "predicted_margin" in metrics_filtered.columns and "actual_margin" in metrics_filtered.columns:
-        sections.append(f'<h2>Predicted vs. Actual Margin</h2>'
-                        f'<p>Each dot is one poll observation. The dashed diagonal line represents perfect prediction — '
-                        f'dots above the line mean the pollster overestimated the leader\'s margin, dots below mean underestimation.</p>'
+        sections.append(f'<h2>Margem Prevista vs. Margem Real</h2>'
+                        f'<p>Cada ponto e uma observacao de pesquisa. A linha diagonal tracejada representa previsao perfeita — '
+                        f'pontos acima da linha significam que o instituto superestimou a margem do lider, pontos abaixo significam subestimacao.</p>'
                         f'<div class="chart">{_margin_scatter(metrics_filtered)}</div>')
 
     if not rankings_by_year_f.empty and "year" in rankings_by_year_f.columns:
-        sections.append(f'<h2>MAE Heatmap by Year</h2>'
-                        f'<p>How each pollster performed in each election year. '
-                        f'Green cells indicate lower error (more accurate); red cells indicate higher error. '
-                        f'Empty cells mean the pollster did not poll that election.</p>'
+        sections.append(f'<h2>Mapa de Calor do EAM por Ano</h2>'
+                        f'<p>Desempenho de cada instituto em cada ano eleitoral. '
+                        f'Celulas verdes indicam menor erro (mais preciso); celulas vermelhas indicam maior erro. '
+                        f'Celulas vazias significam que o instituto nao pesquisou aquela eleicao.</p>'
                         f'<div class="chart">{_heatmap(rankings_by_year_f)}</div>')
 
     for year_val in sorted(rankings_by_year_f["year"].unique()) if "year" in rankings_by_year_f.columns else []:
         yr_df = rankings_by_year_f[rankings_by_year_f["year"] == year_val].sort_values("mean_mae")
-        sections.append(f"<h2>Rankings — {int(year_val)}</h2>{_render_table(yr_df.drop(columns=['year'], errors='ignore'))}")
+        sections.append(f"<h2>Ranking — {int(year_val)}</h2>{_render_table(yr_df.drop(columns=['year'], errors='ignore'))}")
 
     if not rankings_by_race_f.empty:
-        sections.append(f"<h2>Presidential vs. Gubernatorial</h2>"
-                        f"<p>Performance split by race type. Gubernatorial races are often harder to poll due to "
-                        f"smaller sample sizes and more volatile local dynamics.</p>"
+        sections.append(f"<h2>Presidente vs. Governador</h2>"
+                        f"<p>Desempenho por tipo de disputa. Eleicoes para governador sao frequentemente mais dificeis de pesquisar "
+                        f"devido a amostras menores e dinamicas locais mais volateis.</p>"
                         f"{_render_table(rankings_by_race_f.sort_values(['cargo', 'mean_mae']))}")
 
     if not rankings_by_round_f.empty:
-        sections.append(f"<h2>Round 1 vs. Round 2</h2>"
-                        f"<p>Performance split by election round. Round 2 polls are typically more accurate because "
-                        f"only two candidates remain, reducing the scenario complexity.</p>"
+        sections.append(f"<h2>1o Turno vs. 2o Turno</h2>"
+                        f"<p>Desempenho por turno eleitoral. Pesquisas de 2o turno sao tipicamente mais precisas porque "
+                        f"restam apenas dois candidatos, reduzindo a complexidade dos cenarios.</p>"
                         f"{_render_table(rankings_by_round_f.sort_values(['round', 'mean_mae']))}")
 
     sections.append(f"""
     <div class="methodology">
-    <h2>Methodology</h2>
+    <h2>Metodologia</h2>
 
-    <h3>Data Sources</h3>
-    <p>Poll data comes from <strong>Poder360</strong>'s polling database, accessed via
-    <a href="https://basedosdados.org/">Base dos Dados</a> (a Brazilian open data initiative that mirrors
-    public datasets on Google BigQuery). Official election results come from the <strong>TSE</strong>
-    (Tribunal Superior Eleitoral), also accessed via Base dos Dados.</p>
+    <h3>Fontes de Dados</h3>
+    <p>Os dados de pesquisas vem do banco de dados do <strong>Poder360</strong>, acessado via
+    <a href="https://basedosdados.org/">Base dos Dados</a> (uma iniciativa brasileira de dados abertos que
+    espelha conjuntos de dados publicos no Google BigQuery). Os resultados oficiais das eleicoes vem do
+    <strong>TSE</strong> (Tribunal Superior Eleitoral), tambem acessados via Base dos Dados.</p>
 
-    <h3>Poll Selection</h3>
-    <p>For each combination of pollster × race (defined by year, round, office, and state), we select the
-    <strong>final poll published before election day</strong> — the one with the latest fieldwork/publication date.
-    If a poll contains multiple scenarios (different candidate lineups), we select the scenario that includes
-    both top-2 finishers from the official results and has the most candidates (most complete lineup).</p>
+    <h3>Selecao de Pesquisas</h3>
+    <p>Para cada combinacao de instituto x disputa (definida por ano, turno, cargo e estado), selecionamos a
+    <strong>ultima pesquisa publicada antes do dia da eleicao</strong> — aquela com a data de campo/publicacao
+    mais recente. Se uma pesquisa contiver multiplos cenarios (diferentes composicoes de candidatos),
+    selecionamos o cenario que inclui os dois candidatos mais votados no resultado oficial e que possui
+    o maior numero de candidatos (composicao mais completa).</p>
 
-    <h3>Rebasing to Valid Votes</h3>
-    <p>Raw poll percentages include undecided voters, blank votes, and abstentions baked into the denominator.
-    Official results are reported as a share of valid votes only. To make them comparable, we rebase poll
-    percentages:</p>
-    <p><code>poll_valid_pct = raw_pct / sum(all_candidate_raw_pcts) × 100</code></p>
-    <p>This removes undecided/blank/null from the base. Only the rebased percentages for the top-2 finishers
-    are used in error calculations.</p>
+    <h3>Rebase para Votos Validos</h3>
+    <p>Os percentuais brutos das pesquisas incluem indecisos, brancos e nulos no denominador.
+    Os resultados oficiais sao reportados como proporcao dos votos validos apenas. Para torna-los
+    comparaveis, rebaseamos os percentuais das pesquisas:</p>
+    <p><code>pct_valido = pct_bruto / soma(pcts_brutos_todos_candidatos) x 100</code></p>
+    <p>Isso remove indecisos/brancos/nulos da base. Apenas os percentuais rebaseados dos 2 candidatos
+    mais votados sao usados nos calculos de erro.</p>
 
-    <h3>Error Metrics</h3>
-    <p>The primary metric is <strong>MAE (Mean Absolute Error)</strong> over the top-2 candidates, also known as
-    Mosteller Measure 3. For each poll: <code>MAE = (|error_candidate_1| + |error_candidate_2|) / 2</code>.
-    This is then averaged across all races for each pollster.</p>
-    <p><strong>Margin error</strong> measures how well the pollster predicted the gap between the two leading
-    candidates: <code>|predicted_margin - actual_margin|</code>.</p>
-    <p><strong>Partisan bias</strong> is computed as the average signed error for candidates classified as
-    left-leaning or right-leaning (based on party affiliation). A positive left bias means the pollster
-    systematically overestimated left-leaning candidates.</p>
+    <h3>Metricas de Erro</h3>
+    <p>A metrica principal e o <strong>EAM (Erro Absoluto Medio)</strong> sobre os 2 candidatos mais votados,
+    tambem conhecido como Medida de Mosteller 3. Para cada pesquisa:
+    <code>EAM = (|erro_candidato_1| + |erro_candidato_2|) / 2</code>.
+    O EAM e entao calculado como media de todas as disputas para cada instituto.</p>
+    <p><strong>Erro de margem</strong> mede o quao bem o instituto previu a diferenca entre os dois
+    candidatos lideres: <code>|margem_prevista - margem_real|</code>.</p>
+    <p><strong>Vies partidario</strong> e calculado como o erro medio com sinal para candidatos classificados
+    como de esquerda ou de direita (baseado na filiacao partidaria). Um vies de esquerda positivo significa que
+    o instituto sistematicamente superestimou candidatos de esquerda.</p>
 
-    <h3>Confidence Intervals</h3>
-    <p>The 95% confidence intervals are computed via <strong>bootstrap resampling</strong> (10,000 iterations,
-    resampling the pollster's race-level MAE values with replacement). The interval represents the range
-    in which the pollster's true average error likely falls.</p>
+    <h3>Intervalos de Confianca</h3>
+    <p>Os intervalos de confianca de 95% sao calculados via <strong>reamostragem bootstrap</strong>
+    (10.000 iteracoes, reamostrando os valores de EAM por disputa do instituto com reposicao).
+    O intervalo representa a faixa em que o erro medio verdadeiro do instituto provavelmente se encontra.</p>
 
-    <h3>Pollster Identity</h3>
-    <p><strong>IBOPE</strong> (which ceased operations in January 2021) and <strong>Ipec</strong> (founded by
-    former IBOPE staff) are treated as one entity ("IBOPE/Ipec") to maintain continuity across election cycles.</p>
+    <h3>Identidade dos Institutos</h3>
+    <p>O <strong>IBOPE</strong> (que encerrou operacoes em janeiro de 2021) e o <strong>Ipec</strong>
+    (fundado por ex-funcionarios do IBOPE) sao tratados como uma unica entidade ("IBOPE/Ipec") para
+    manter a continuidade entre ciclos eleitorais.</p>
 
-    <h3>Minimum Observation Threshold</h3>
-    <p>Only pollsters with <strong>{MIN_RACES} or more</strong> race observations are included in this report.
-    Pollsters with fewer observations are excluded because their rankings would be unreliable — a single
-    lucky or unlucky race would dominate their average.</p>
+    <h3>Limiar Minimo de Observacoes</h3>
+    <p>Apenas institutos com <strong>{MIN_RACES} ou mais</strong> observacoes de disputas sao incluidos
+    neste relatorio. Institutos com menos observacoes sao excluidos porque seus rankings seriam
+    pouco confiaveis — uma unica disputa com sorte ou azar dominaria sua media.</p>
 
-    <h3>Coverage</h3>
-    <p>This analysis covers <strong>presidential and gubernatorial</strong> elections, both rounds,
-    for the years covered by the analysis window. The default window is 2014–2022 (three election cycles).
-    All data from 2000 onward is available for extended analysis.</p>
+    <h3>Cobertura</h3>
+    <p>Esta analise abrange eleicoes <strong>presidenciais e para governador</strong>, ambos os turnos,
+    para os anos cobertos pela janela de analise. A janela padrao e 2014–2022 (tres ciclos eleitorais).
+    Todos os dados a partir de 2000 estao disponiveis para analise estendida.</p>
     </div>
     """)
 
-    html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Pollster Accuracy Report</title>{CSS}</head><body>{''.join(sections)}</body></html>"
+    html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Relatorio de Precisao dos Institutos de Pesquisa</title>{CSS}</head><body>{''.join(sections)}</body></html>"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html, encoding="utf-8")

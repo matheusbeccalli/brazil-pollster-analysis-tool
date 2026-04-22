@@ -42,6 +42,6 @@ def test_full_pipeline(full_pipeline_db):
     generate_report(con, report_path)
     assert report_path.exists()
     html = report_path.read_text()
-    assert "Pollster Accuracy Report" in html
+    assert "Precisao dos Institutos" in html
 
     con.close()

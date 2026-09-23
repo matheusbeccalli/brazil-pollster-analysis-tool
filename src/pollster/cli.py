@@ -19,6 +19,14 @@ def fetch(force):
     fetch_data(data_dir, force=force)
 
 
+@cli.command("fetch-2026")
+@click.option("--force", is_flag=True, help="Re-download even if data exists.")
+def fetch_2026_cmd(force):
+    """Download 2026 presidential polls from the Poder360 aggregator."""
+    from pollster.stages.fetch2026 import fetch_2026
+    fetch_2026(pathlib.Path(config.DATA_DIR_NAME), force=force)
+
+
 @cli.command()
 def assemble():
     """Build unified polls-vs-actual dataset."""

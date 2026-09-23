@@ -58,7 +58,7 @@ Apos a instalacao, o comando `pollster` estara disponivel no terminal (enquanto 
 pollster --help
 ```
 
-Deve mostrar os subcomandos disponiveis: `fetch`, `assemble`, `analyze`, `report`, `run`, `query`.
+Deve mostrar os subcomandos disponiveis: `fetch`, `fetch-2026`, `assemble`, `analyze`, `report`, `project`, `run`, `query`.
 
 ## Como Executar
 
@@ -196,6 +196,9 @@ pollster query --format parquet --output resultado.parquet "SELECT * FROM poll_l
 | `pollster_rankings_by_year` | Rankings por ano eleitoral |
 | `pollster_rankings_by_round` | Rankings por turno |
 | `pollster_rankings_by_race_type` | Rankings por tipo de disputa (presidente/governador) |
+| `polls_2026` | Pesquisas presidenciais de 2026 (Poder360 agregador) |
+| `projection_2026_summary` | Projecao por candidato e turno |
+| `projection_2026_polls` | Pesquisas e pesos usados na projecao |
 
 ## Arquivos de Saida
 
@@ -227,6 +230,9 @@ src/pollster/
 ├── db.py               # Helper DuckDB
 ├── stages/
 │   ├── fetch.py        # Etapa 1: download do Base dos Dados via BigQuery
+│   ├── fetch2026.py    # Pesquisas 2026 do agregador do Poder360
+│   ├── project.py      # Projecao 2026: pesos, media ponderada, Monte Carlo
+│   ├── project_report.py # Relatorio HTML da projecao
 │   ├── assemble.py     # Etapa 2: cruzamento pesquisas x resultados
 │   ├── analyze.py      # Etapa 3: metricas, rankings, bootstrap CIs
 │   └── report.py       # Etapa 4: relatorio HTML com graficos SVG
@@ -243,6 +249,33 @@ src/pollster/
 - **Candidatos:** `basedosdados.br_tse_eleicoes.candidatos` — dados cadastrais dos candidatos
 
 Todos acessados via [Base dos Dados](https://basedosdados.org/), uma iniciativa brasileira de dados abertos.
+
+## Projecao 2026 (1o e 2o turno)
+
+O Base dos Dados parou de atualizar as pesquisas do Poder360 em nov/2023, entao as pesquisas
+da campanha de 2026 vem direto do backend aberto do agregador do Poder360
+(`monitor-agregador.poder360.com.br`, sem login para o ciclo de 2026).
+
+```bash
+source .venv/bin/activate
+
+# 1. Baixar as pesquisas presidenciais de 2026 (turnos 1 e 2). Use --force para atualizar.
+pollster fetch-2026 --force
+
+# 2. Gerar a projecao (requer o relatorio de precisao ja calculado: assemble + analyze)
+pollster project                          # data de referencia = hoje
+pollster project --as-of 2026-09-20       # simular a projecao em outra data
+pollster project --window-days 21 --sims 50000
+```
+
+O relatorio sai em `data/reports/projecao_2026.html`. As tabelas `polls_2026`,
+`projection_2026_summary` e `projection_2026_polls` ficam disponiveis para `pollster query`.
+
+**Metodo (resumo):** uma pesquisa por instituto nos ultimos 14 dias; percentuais rebaseados para votos
+validos; media ponderada por precisao historica (EAM presidencial de 2022 deste projeto), recencia
+(`exp(-idade/7)`) e amostra (`sqrt(n/2000)`); 10.000 simulacoes Monte Carlo com choque na margem
+entre os dois lideres (`sigma` = maior entre 3 pp e o RMSE historico da media dos institutos).
+Institutos sem historico recebem o peso mediano. Uso pessoal, nao e previsao profissional.
 
 ## Adicionando Uma Nova Eleicao (ex: 2026)
 

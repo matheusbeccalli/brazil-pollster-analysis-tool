@@ -7,6 +7,7 @@ ELECTIONS: dict[int, dict[str, date]] = {
     2014: {"round_1": date(2014, 10, 5), "round_2": date(2014, 10, 26)},
     2018: {"round_1": date(2018, 10, 7), "round_2": date(2018, 10, 28)},
     2022: {"round_1": date(2022, 10, 2), "round_2": date(2022, 10, 30)},
+    2026: {"round_1": date(2026, 10, 4), "round_2": date(2026, 10, 25)},
 }
 
 DEFAULT_SINCE_YEAR = 2014
@@ -76,3 +77,30 @@ BIGQUERY_TABLES = {
 
 DATA_DIR_NAME = "data"
 DB_FILENAME = "pollster.duckdb"
+
+# --- 2026 projection -------------------------------------------------------
+
+# Poder360 aggregator names -> historical display names used in the rankings.
+POLLSTER_ALIASES_2026: dict[str, str] = {
+    "AtlasIntel": "AtlasIntel/Internet",
+    "Futura Inteligência": "Futura",
+    "Ipec": "IBOPE/Ipec",
+    "Instituto Ideia": "Ideia Big Data",
+    "CNT (Confederação Nacional do Transporte)": "MDA",
+}
+
+# Open backend of the Poder360 aggregator (no login needed for the 2026 cycle).
+PODER360_AGREGADOR_URL = "https://monitor-agregador.poder360.com.br/pesquisas/v1/api"
+PODER360_CARGO_PRESIDENTE = 3
+PODER360_UF_BRASIL = 6
+
+PROJECTION_YEAR = 2026
+PROJECTION_WINDOW_DAYS = 14            # polls considered: last N days before --as-of
+PROJECTION_RECENCY_TAU_DAYS = 7.0      # weight = exp(-age_days / tau)
+PROJECTION_REFERENCE_SAMPLE = 2000     # weight = min(sqrt(n / ref), 2)
+PROJECTION_SIGMA_FLOOR = 3.0           # min. sigma (pp) of the top-2 margin error
+PROJECTION_SIGMA_OTHER = 1.5           # sigma (pp) for candidates outside the top 2
+PROJECTION_N_SIMS = 10_000
+PROJECTION_SEED = 2026
+PROJECTION_RUNOFF_PAIR = ("Lula", "Flávio Bolsonaro")
+PROJECTION_HISTORY_YEARS = (2022,)     # 2018 presidential rows are mis-matched; excluded

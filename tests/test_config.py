@@ -20,3 +20,12 @@ def test_party_leaning_has_major_parties():
 
 def test_pollster_merges_ibope_ipec():
     assert POLLSTER_MERGES.get("Ibope") == POLLSTER_MERGES.get("Ipec")
+
+
+def test_2026_election_dates_and_aliases():
+    from datetime import date
+    from pollster.config import ELECTIONS, POLLSTER_ALIASES_2026, PODER360_AGREGADOR_URL
+    assert ELECTIONS[2026]["round_1"] == date(2026, 10, 4)
+    assert ELECTIONS[2026]["round_2"] == date(2026, 10, 25)
+    assert POLLSTER_ALIASES_2026["AtlasIntel"] == "AtlasIntel/Internet"
+    assert PODER360_AGREGADOR_URL.startswith("https://monitor-agregador.poder360.com.br")

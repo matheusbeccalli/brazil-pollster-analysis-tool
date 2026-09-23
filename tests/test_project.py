@@ -97,47 +97,84 @@ def test_simulate_is_reproducible_with_seed():
     assert np.array_equal(a, b)
 
 
+def test_history_weight_halves_every_two_elections():
+    assert P.history_weight(2022) == pytest.approx(1.0)
+    assert P.history_weight(2014) == pytest.approx(0.5)
+    assert P.history_weight(2006) == pytest.approx(0.25)
+
+
 def test_historical_sigma_margin_uses_floor(tmp_db):
     tmp_db.execute("""CREATE TABLE poll_level_metrics AS SELECT * FROM (VALUES
-        (2022, 1, 'presidente', 'A', 8.0, 5.0), (2022, 1, 'presidente', 'B', 6.0, 5.0),
-        (2022, 2, 'presidente', 'A', 4.0, 2.0), (2022, 2, 'presidente', 'B', 2.0, 2.0))
-        t(year, round, cargo, pollster_display_name, predicted_margin, actual_margin)""")
+        (2022, 1, 'presidente', 'A', 8.0, 5.0, 'left', 'right'), (2022, 1, 'presidente', 'B', 6.0, 5.0, 'left', 'right'),
+        (2022, 2, 'presidente', 'A', 4.0, 2.0, 'left', 'right'), (2022, 2, 'presidente', 'B', 2.0, 2.0, 'left', 'right'))
+        t(year, round, cargo, pollster_display_name, predicted_margin, actual_margin, candidate_1_leaning, candidate_2_leaning)""")
     # errors: R1 = 7-5 = 2, R2 = 3-2 = 1 -> RMSE 1.58 -> floor 3.0
     assert P.historical_sigma_margin(tmp_db) == pytest.approx(3.0)
 
 
-def test_historical_sigma_margin_above_floor(tmp_db):
+def test_historical_sigma_margin_above_floor_across_years(tmp_db):
     tmp_db.execute("""CREATE TABLE poll_level_metrics AS SELECT * FROM (VALUES
-        (2022, 1, 'presidente', 'A', 10.0, 5.0), (2022, 2, 'presidente', 'A', 6.0, 2.0))
-        t(year, round, cargo, pollster_display_name, predicted_margin, actual_margin)""")
+        (2022, 1, 'presidente', 'A', 10.0, 5.0, 'left', 'right'), (2018, 1, 'presidente', 'A', 6.0, 2.0, 'right', 'left'))
+        t(year, round, cargo, pollster_display_name, predicted_margin, actual_margin, candidate_1_leaning, candidate_2_leaning)""")
     assert P.historical_sigma_margin(tmp_db) == pytest.approx(np.sqrt((25 + 16) / 2))
 
 
-def test_pollster_accuracy_uses_2022_presidential_mae(tmp_db):
+def test_pollster_accuracy_is_recency_weighted_over_presidential_races(tmp_db):
     tmp_db.execute("""CREATE TABLE poll_level_metrics AS SELECT * FROM (VALUES
         (2022, 1, 'presidente', 'A', 2.0), (2022, 2, 'presidente', 'A', 4.0),
-        (2022, 1, 'presidente', 'B', 6.0), (2022, 1, 'governador', 'B', 40.0),
-        (2018, 1, 'presidente', 'C', 30.0))
+        (2014, 1, 'presidente', 'A', 10.0),
+        (2022, 1, 'presidente', 'B', 6.0), (2022, 1, 'governador', 'B', 40.0))
         t(year, round, cargo, pollster_display_name, mae_top2)""")
     eam, median = P.pollster_accuracy(tmp_db)
-    assert eam == {"A": 3.0, "B": 6.0}
-    assert median == pytest.approx(4.5)
+    # A: 2022 mean 3.0 (weight 1) and 2014 10.0 (weight 0.5) -> (3 + 5) / 1.5
+    assert eam["A"] == pytest.approx((3.0 + 0.5 * 10.0) / 1.5)
+    assert eam["B"] == pytest.approx(6.0)
+    assert median == pytest.approx((eam["A"] + 6.0) / 2)
+
+
+def test_historical_margin_bias_is_left_minus_right_and_recency_weighted(tmp_db):
+    # 2022: polls said left +7, actual +5 -> bias +2 (weight 1)
+    # 2018: candidate 1 is right; polls said right +11, actual right +17 -> left-right error = -11 - (-17) = +6 (weight 0.707)
+    tmp_db.execute("""CREATE TABLE poll_level_metrics AS SELECT * FROM (VALUES
+        (2022, 1, 'presidente', 'A', 8.0, 5.0, 'left', 'right'), (2022, 1, 'presidente', 'B', 6.0, 5.0, 'left', 'right'),
+        (2018, 1, 'presidente', 'A', 11.0, 17.0, 'right', 'left'),
+        (2014, 1, 'presidente', 'A', 3.0, 1.0, 'center', 'right'))
+        t(year, round, cargo, pollster_display_name, predicted_margin, actual_margin, candidate_1_leaning, candidate_2_leaning)""")
+    w18 = P.history_weight(2018)
+    bias, table = P.historical_margin_bias(tmp_db)
+    assert bias == pytest.approx((2.0 * 1.0 + 6.0 * w18) / (1.0 + w18))
+    assert len(table) == 2 and set(table["year"]) == {2022, 2018}   # center/right race skipped
+
+
+def test_adjust_estimate_moves_margin_from_left_to_right():
+    est = pd.DataFrame({"candidate_key": ["lula", "flavio bolsonaro", "augusto cury"],
+                        "candidate": ["Lula", "Flávio Bolsonaro", "Augusto Cury"],
+                        "partido": ["PT", "PL", "Avante"], "n_polls": [1, 1, 1],
+                        "weighted_pct": [42.0, 38.0, 20.0], "simple_pct": [42.0, 38.0, 20.0]})
+    adj = P.adjust_estimate(est, bias=3.0)
+    assert adj["weighted_pct"].tolist() == pytest.approx([40.5, 39.5, 20.0])
+    assert adj["weighted_pct"].sum() == pytest.approx(100.0)
+    assert P.adjust_estimate(est, bias=0.0)["weighted_pct"].tolist() == [42.0, 38.0, 20.0]
 
 
 def test_project_election_end_to_end(tmp_db, tmp_data_dir):
     polls = _polls()
     tmp_db.execute("CREATE TABLE polls_2026 AS SELECT * FROM polls")
     tmp_db.execute("""CREATE TABLE poll_level_metrics AS SELECT * FROM (VALUES
-        (2022, 1, 'presidente', 'Datafolha', 3.0, 8.0, 5.0),
-        (2022, 2, 'presidente', 'Datafolha', 2.0, 4.0, 2.0))
-        t(year, round, cargo, pollster_display_name, mae_top2, predicted_margin, actual_margin)""")
+        (2022, 1, 'presidente', 'Datafolha', 3.0, 8.0, 5.0, 'left', 'right'),
+        (2022, 2, 'presidente', 'Datafolha', 2.0, 4.0, 2.0, 'left', 'right'))
+        t(year, round, cargo, pollster_display_name, mae_top2, predicted_margin, actual_margin,
+          candidate_1_leaning, candidate_2_leaning)""")
     res = P.project_election(tmp_db, as_of=date(2026, 9, 23), n_sims=500, data_dir=tmp_data_dir)
     assert res.round1.estimate.iloc[0]["candidate"] == "Lula"
     assert res.round2 is not None
     assert res.round2.estimate["candidate"].tolist() == ["Lula", "Flávio Bolsonaro"]
     assert 0.0 < res.round2.estimate.iloc[0]["p_first"] < 1.0
-    n = tmp_db.execute("SELECT COUNT(*) FROM projection_2026_summary").fetchone()[0]
-    assert n == 3 + 2
+    assert res.bias_margin == pytest.approx(2.5)   # (3 + 2) / 2, both 2022
+    assert res.round1_adj is not None and res.round2_adj is not None
+    assert res.round2_adj.estimate.iloc[0]["p_first"] < res.round2.estimate.iloc[0]["p_first"]
+    summary = tmp_db.execute("SELECT variant, COUNT(*) FROM projection_2026_summary GROUP BY 1 ORDER BY 1").fetchall()
+    assert summary == [("bias_adjusted", 5), ("raw", 5)]
     assert (tmp_data_dir / "parquet" / "projection_2026_polls.parquet").exists()
 
 

@@ -24,10 +24,10 @@ def test_pollster_merges_ibope_ipec():
 
 def test_2026_election_dates_and_aliases():
     from datetime import date
-    from pollster.config import ELECTIONS, POLLSTER_ALIASES_2026, PODER360_AGREGADOR_URL
+    from pollster.config import ELECTIONS, POLLSTER_ALIASES_PODER360, PODER360_AGREGADOR_URL
     assert ELECTIONS[2026]["round_1"] == date(2026, 10, 4)
     assert ELECTIONS[2026]["round_2"] == date(2026, 10, 25)
-    assert POLLSTER_ALIASES_2026["AtlasIntel"] == "AtlasIntel/Internet"
+    assert POLLSTER_ALIASES_PODER360["AtlasIntel"] == "AtlasIntel/Internet"
     assert PODER360_AGREGADOR_URL.startswith("https://monitor-agregador.poder360.com.br")
 
 

@@ -94,3 +94,22 @@ def test_split_scenarios_keeps_late_candidate_when_sum_has_room():
             {"nome": "Augusto Cury", "percentual": 6}, {"nome": "brancos / nulos", "percentual": 9},
             {"nome": "indecisos", "percentual": 7}, {"nome": "Renan Santos", "percentual": 3}]
     assert len(split_scenarios(flat)) == 1
+
+
+def test_backend_to_polls_schema():
+    from pollster.utils.poder360 import backend_to_polls_schema
+    raw = [{"id": 77, "instituto": "Datafolha", "data": "2014-10-04", "contratante": "Folha",
+            "entrevistas": 18116, "margem": 2, "registro": "BR-00001/2014",
+            "apuracoes": [[{"nome": "Dilma Rousseff", "partido": "PT", "percentual": 40},
+                            {"nome": "Aécio Neves", "partido": "PSDB", "percentual": 24},
+                            {"nome": "brancos / nulos", "partido": "N/A", "percentual": 8}]]}]
+    long = polls_to_frame(raw, turno=1)
+    long.insert(0, "ano", 2014)
+    df = backend_to_polls_schema(long)
+    assert set(["id_pesquisa", "ano", "sigla_uf", "cargo", "data", "instituto", "numero_registro",
+                "quantidade_entrevistas", "margem_mais", "margem_menos", "turno", "id_cenario",
+                "descricao_cenario", "nome_candidato", "sigla_partido", "condicao", "percentual"]) <= set(df.columns)
+    assert df["sigla_uf"].unique().tolist() == ["BR"] and df["cargo"].unique().tolist() == ["presidente"]
+    assert df["condicao"].tolist() == [0, 0, 1]
+    assert df["id_cenario"].unique().tolist() == ["77-0"]
+    assert df["quantidade_entrevistas"].iloc[0] == 18116

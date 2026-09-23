@@ -19,12 +19,23 @@ def fetch(force):
     fetch_data(data_dir, force=force)
 
 
+@cli.command("fetch-poder360")
+@click.option("--years", default=None,
+              help="Comma-separated election years (default: all in config.ELECTIONS).")
+@click.option("--force", is_flag=True, help="Re-download the requested years even if data exists.")
+def fetch_poder360_cmd(years, force):
+    """Download national presidential polls (2002-2026) from the Poder360 aggregator."""
+    from pollster.stages.fetch_poder360 import fetch_poder360
+    year_list = [int(y) for y in years.split(",")] if years else None
+    fetch_poder360(pathlib.Path(config.DATA_DIR_NAME), years=year_list, force=force)
+
+
 @cli.command("fetch-2026")
 @click.option("--force", is_flag=True, help="Re-download even if data exists.")
 def fetch_2026_cmd(force):
-    """Download 2026 presidential polls from the Poder360 aggregator."""
-    from pollster.stages.fetch2026 import fetch_2026
-    fetch_2026(pathlib.Path(config.DATA_DIR_NAME), force=force)
+    """Download only the 2026 presidential polls (alias of fetch-poder360 --years 2026)."""
+    from pollster.stages.fetch_poder360 import fetch_poder360
+    fetch_poder360(pathlib.Path(config.DATA_DIR_NAME), years=[config.PROJECTION_YEAR], force=force)
 
 
 @cli.command("fetch-markets")

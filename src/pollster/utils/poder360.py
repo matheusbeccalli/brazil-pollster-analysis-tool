@@ -3,7 +3,7 @@ import unicodedata
 
 import pandas as pd
 
-from pollster.config import POLLSTER_ALIASES_2026
+from pollster.config import POLLSTER_ALIASES_PODER360
 from pollster.utils.normalize import normalize_pollster_name
 
 # Substrings (accent-stripped, lower-case) that mark non-candidate rows.
@@ -81,7 +81,7 @@ def split_scenarios(entries: list[dict], overflow: float = 103.0) -> list[list[d
 
 def normalize_pollster_2026(raw_name: str) -> str:
     name = (raw_name or "").strip()
-    name = POLLSTER_ALIASES_2026.get(name, name)
+    name = POLLSTER_ALIASES_PODER360.get(name, name)
     return normalize_pollster_name(name)
 
 
@@ -112,3 +112,35 @@ def polls_to_frame(raw: list[dict], turno: int) -> pd.DataFrame:
                                  "is_valid_candidate": is_valid_candidate(name)})
                 idx += 1
     return pd.DataFrame(rows, columns=FRAME_COLUMNS)
+
+
+def backend_to_polls_schema(long_df: pd.DataFrame) -> pd.DataFrame:
+    """Convert the long backend frame (with `ano`) into the Base dos Dados `poder360_polls` schema."""
+    df = long_df
+    out = pd.DataFrame({
+        "id_pesquisa": "p360-" + df["poll_id"].astype(str),
+        "ano": df["ano"].astype(int),
+        "sigla_uf": "BR",
+        "nome_municipio": None,
+        "cargo": "presidente",
+        "data": pd.to_datetime(df["data"]),
+        "data_referencia": None,
+        "instituto": df["instituto"],
+        "contratante": df["contratante"],
+        "orgao_registro": None,
+        "numero_registro": df["registro"],
+        "quantidade_entrevistas": df["entrevistas"].astype(float),
+        "margem_mais": df["margem"].astype(float),
+        "margem_menos": df["margem"].astype(float),
+        "tipo": "estimulada",
+        "turno": df["turno"].astype(int),
+        "tipo_voto": None,
+        "id_cenario": df["poll_id"].astype(str) + "-" + df["cenario_idx"].astype(str),
+        "descricao_cenario": "cenario " + df["cenario_idx"].astype(str),
+        "id_candidato_poder360": None,
+        "nome_candidato": df["nome_candidato"],
+        "sigla_partido": df["partido"],
+        "condicao": (~df["is_valid_candidate"]).astype(int),
+        "percentual": df["percentual"].astype(float),
+    })
+    return out.reset_index(drop=True)

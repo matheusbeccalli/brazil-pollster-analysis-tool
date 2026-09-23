@@ -80,19 +80,22 @@ DB_FILENAME = "pollster.duckdb"
 
 # --- 2026 projection -------------------------------------------------------
 
-# Poder360 aggregator names -> historical display names used in the rankings.
-POLLSTER_ALIASES_2026: dict[str, str] = {
+# Poder360 aggregator names -> display names used in the rankings.
+POLLSTER_ALIASES_PODER360: dict[str, str] = {
     "AtlasIntel": "AtlasIntel/Internet",
     "Futura Inteligência": "Futura",
     "Ipec": "IBOPE/Ipec",
     "Instituto Ideia": "Ideia Big Data",
     "CNT (Confederação Nacional do Transporte)": "MDA",
+    "Paraná": "Paraná Pesquisas",
 }
 
 # Open backend of the Poder360 aggregator (no login needed for the 2026 cycle).
 PODER360_AGREGADOR_URL = "https://monitor-agregador.poder360.com.br/pesquisas/v1/api"
 PODER360_CARGO_PRESIDENTE = 3
 PODER360_UF_BRASIL = 6
+# Election years served by the backend (verified 2026-09-23: 2002-2022 both rounds, plus 2026).
+PODER360_YEARS: list[int] = sorted(ELECTIONS)
 
 PROJECTION_YEAR = 2026
 PROJECTION_WINDOW_DAYS = 14            # polls considered: last N days before --as-of
@@ -103,7 +106,9 @@ PROJECTION_SIGMA_OTHER = 1.5           # sigma (pp) for candidates outside the t
 PROJECTION_N_SIMS = 10_000
 PROJECTION_SEED = 2026
 PROJECTION_RUNOFF_PAIR = ("Lula", "Flávio Bolsonaro")
-PROJECTION_HISTORY_YEARS = (2022,)     # 2018 presidential rows are mis-matched; excluded
+PROJECTION_BASE_YEAR = 2022            # most recent completed presidential election
+PROJECTION_HISTORY_HALF_LIFE_YEARS = 8.0  # history weight = 0.5 ** ((base - year) / half_life)
+PROJECTION_BIAS_CORRECTION = True      # also produce the bias-adjusted variant
 PROJECTION_MIN_SCENARIO_TOTAL = 85.0   # scenarios summing less are incomplete API rows
 
 # --- Prediction markets (storage only; not used by the analysis) --------------

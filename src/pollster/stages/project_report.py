@@ -258,8 +258,7 @@ def generate_projection_report(result: ProjectionResult, all_polls: pd.DataFrame
     Percentuais rebaseados para votos validos (indecisos, brancos e nulos fora do denominador).
     Peso de cada pesquisa = <code>(EAM mediano / EAM do instituto) x exp(-idade em dias / {config.PROJECTION_RECENCY_TAU_DAYS:.0f})
     x min(sqrt(amostra / {config.PROJECTION_REFERENCE_SAMPLE}), 2)</code>.
-    O EAM vem do relatorio de precisao deste projeto (disputas presidenciais de {', '.join(str(y) for y in config.PROJECTION_HISTORY_YEARS)},
-    ambos os turnos): {known_html}. Mediana: {result.median_eam:.1f} pp. Institutos sem historico recebem a mediana (peso 1).</p>
+    O EAM vem do relatorio de precisao deste projeto (disputas presidenciais desde 2002, ambos os turnos, com peso por recencia): {known_html}. Mediana: {result.median_eam:.1f} pp. Institutos sem historico recebem a mediana (peso 1).</p>
     <h3>Simulacao</h3>
     <p>{result.n_sims:,} simulacoes. Em cada uma, a margem entre os dois primeiros recebe um choque
     <code>N(0, {result.sigma_margin:.1f} pp)</code> (metade para cada lado); os demais candidatos recebem ruido

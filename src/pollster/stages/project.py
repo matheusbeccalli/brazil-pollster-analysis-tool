@@ -37,35 +37,89 @@ class ProjectionResult:
     median_eam: float
     round1: RoundProjection
     round2: RoundProjection | None
+    bias_margin: float = 0.0                 # historical poll-average error, left minus right (pp)
+    bias_table: pd.DataFrame | None = None   # per-election errors behind bias_margin
+    round1_adj: RoundProjection | None = None
+    round2_adj: RoundProjection | None = None
 
 
-def _history_years_sql() -> str:
-    return ", ".join(str(y) for y in config.PROJECTION_HISTORY_YEARS)
+def history_weight(year: int) -> float:
+    """Recency weight of a past election: halves every PROJECTION_HISTORY_HALF_LIFE_YEARS."""
+    return 0.5 ** ((config.PROJECTION_BASE_YEAR - year) / config.PROJECTION_HISTORY_HALF_LIFE_YEARS)
 
 
 def pollster_accuracy(con: duckdb.DuckDBPyConnection) -> tuple[dict[str, float], float]:
-    """Mean presidential EAM per pollster over the history years, plus the median."""
-    df = con.execute(f"""
-        SELECT pollster_display_name, AVG(mae_top2) AS eam
+    """Recency-weighted mean presidential EAM per pollster, plus the median across pollsters."""
+    df = con.execute("""
+        SELECT pollster_display_name, year, AVG(mae_top2) AS eam
         FROM poll_level_metrics
-        WHERE LOWER(cargo) = 'presidente' AND year IN ({_history_years_sql()})
-        GROUP BY pollster_display_name
+        WHERE LOWER(cargo) = 'presidente'
+        GROUP BY pollster_display_name, year
     """).fetchdf()
-    eam = {str(k): float(v) for k, v in zip(df["pollster_display_name"], df["eam"])}
+    eam: dict[str, float] = {}
+    for name, g in df.groupby("pollster_display_name"):
+        w = g["year"].map(history_weight).values
+        eam[str(name)] = float(np.average(g["eam"].values, weights=w))
     median = float(np.median(list(eam.values()))) if eam else 1.0
     return eam, median
 
 
-def historical_sigma_margin(con: duckdb.DuckDBPyConnection) -> float:
-    """RMSE of the poll-average error on the top-2 margin, floored at the config value."""
-    df = con.execute(f"""
-        SELECT year, round, AVG(predicted_margin) - AVG(actual_margin) AS err
+def _race_margin_errors(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Per presidential race: poll-average margin vs actual, plus the left-minus-right version."""
+    df = con.execute("""
+        SELECT year, round,
+               MAX(candidate_1_leaning) AS leaning_1, MAX(candidate_2_leaning) AS leaning_2,
+               AVG(predicted_margin) AS predicted_margin, AVG(actual_margin) AS actual_margin,
+               COUNT(*) AS n_polls
         FROM poll_level_metrics
-        WHERE LOWER(cargo) = 'presidente' AND year IN ({_history_years_sql()})
+        WHERE LOWER(cargo) = 'presidente'
         GROUP BY year, round
+        ORDER BY year, round
     """).fetchdf()
-    rmse = float(np.sqrt(np.mean(np.square(df["err"].values)))) if len(df) else 0.0
+    df["error"] = df["predicted_margin"] - df["actual_margin"]
+    return df
+
+
+def historical_sigma_margin(con: duckdb.DuckDBPyConnection) -> float:
+    """RMSE of the poll-average error on the top-2 margin over all races, floored."""
+    df = _race_margin_errors(con)
+    rmse = float(np.sqrt(np.mean(np.square(df["error"].values)))) if len(df) else 0.0
     return max(rmse, config.PROJECTION_SIGMA_FLOOR)
+
+
+def historical_margin_bias(con: duckdb.DuckDBPyConnection) -> tuple[float, pd.DataFrame]:
+    """Recency-weighted mean of the poll-average error on the margin *left minus right*.
+
+    Positive = polls overstated the left candidate's margin. Races whose top 2 are not one
+    left and one right candidate are skipped.
+    """
+    df = _race_margin_errors(con)
+    pair = {("left", "right"): 1.0, ("right", "left"): -1.0}
+    df["sign"] = [pair.get((a, b)) for a, b in zip(df["leaning_1"], df["leaning_2"])]
+    df = df.dropna(subset=["sign"]).copy()
+    if df.empty:
+        return 0.0, df
+    df["error_left_minus_right"] = df["error"] * df["sign"]
+    df["weight"] = df["year"].map(history_weight)
+    bias = float(np.average(df["error_left_minus_right"].values, weights=df["weight"].values))
+    return bias, df.reset_index(drop=True)
+
+
+def adjust_estimate(estimate: pd.DataFrame, bias: float) -> pd.DataFrame:
+    """Shift the top-2 margin by -bias (left loses bias/2, right gains bias/2), renormalize."""
+    est = estimate.copy()
+    if bias == 0.0 or len(est) < 2:
+        return est
+    top2 = est.iloc[:2]
+    leanings = [config.PARTY_LEANING.get(str(p).upper(), "unknown") for p in top2["partido"]]
+    if sorted(leanings) != ["left", "right"]:
+        return est
+    shift = np.zeros(len(est))
+    shift[0] = -bias / 2 if leanings[0] == "left" else bias / 2
+    shift[1] = -shift[0]
+    est["weighted_pct"] = np.clip(est["weighted_pct"].values + shift, 0.0, None)
+    est["weighted_pct"] = est["weighted_pct"] / est["weighted_pct"].sum() * 100.0
+    return est.sort_values("weighted_pct", ascending=False).reset_index(drop=True)
 
 
 def main_scenarios(polls: pd.DataFrame, turno: int) -> pd.DataFrame:
@@ -182,12 +236,12 @@ def summarize(estimate: pd.DataFrame, sims: np.ndarray) -> tuple[pd.DataFrame, f
 
 def project_round(polls_2026: pd.DataFrame, turno: int, as_of: date, window_days: int,
                   eam: dict, median_eam: float, sigma_margin: float, sigma_other: float,
-                  n_sims: int, rng: np.random.Generator) -> RoundProjection | None:
+                  n_sims: int, rng: np.random.Generator, bias: float = 0.0) -> RoundProjection | None:
     df = select_window(main_scenarios(polls_2026, turno), as_of, window_days)
     if df.empty:
         return None
     df = add_weights(df, as_of, eam, median_eam)
-    est = weighted_estimate(df)
+    est = adjust_estimate(weighted_estimate(df), bias)
     sims = simulate(est, sigma_margin, sigma_other, n_sims, rng)
     summary, p_decided = summarize(est, sims)
     return RoundProjection(turno=turno, polls=df, estimate=summary, sims=sims, p_decided=p_decided)
@@ -203,17 +257,24 @@ def project_election(con: duckdb.DuckDBPyConnection, as_of: date | None = None,
     eam, median_eam = pollster_accuracy(con)
     sigma_margin = historical_sigma_margin(con)
     sigma_other = config.PROJECTION_SIGMA_OTHER
-    rng = np.random.default_rng(config.PROJECTION_SEED)
-    click.echo(f"Projecting as of {as_of} (window {window_days}d, "
-               f"sigma_margin {sigma_margin:.2f} pp, {n_sims} sims)...")
-    r1 = project_round(polls, 1, as_of, window_days, eam, median_eam,
-                       sigma_margin, sigma_other, n_sims, rng)
+    bias, bias_table = historical_margin_bias(con)
+    click.echo(f"Projecting as of {as_of} (window {window_days}d, sigma_margin {sigma_margin:.2f} pp, "
+               f"historical left-right bias {bias:+.2f} pp, {n_sims} sims)...")
+
+    def run(turno: int, shift: float) -> RoundProjection | None:
+        rng = np.random.default_rng(config.PROJECTION_SEED + turno)
+        return project_round(polls, turno, as_of, window_days, eam, median_eam,
+                             sigma_margin, sigma_other, n_sims, rng, bias=shift)
+
+    r1 = run(1, 0.0)
     if r1 is None:
         raise click.ClickException("No first-round polls in the window.")
-    r2 = project_round(polls, 2, as_of, window_days, eam, median_eam,
-                       sigma_margin, sigma_other, n_sims, rng)
+    r2 = run(2, 0.0)
+    r1_adj = r2_adj = None
+    if config.PROJECTION_BIAS_CORRECTION:
+        r1_adj, r2_adj = run(1, bias), run(2, bias)
     result = ProjectionResult(as_of, window_days, sigma_margin, sigma_other, n_sims,
-                              eam, median_eam, r1, r2)
+                              eam, median_eam, r1, r2, bias, bias_table, r1_adj, r2_adj)
     _persist(con, result, data_dir)
     return result
 
@@ -221,16 +282,20 @@ def project_election(con: duckdb.DuckDBPyConnection, as_of: date | None = None,
 def _persist(con: duckdb.DuckDBPyConnection, result: ProjectionResult,
              data_dir: pathlib.Path | None) -> None:
     summaries, used = [], []
-    for rp in (result.round1, result.round2):
+    variants = [("raw", result.round1), ("raw", result.round2),
+                ("bias_adjusted", result.round1_adj), ("bias_adjusted", result.round2_adj)]
+    for variant, rp in variants:
         if rp is None:
             continue
         s = rp.estimate.copy()
         s.insert(0, "turno", rp.turno)
+        s.insert(0, "variant", variant)
         s["as_of"] = pd.Timestamp(result.as_of)
         summaries.append(s)
-        u = rp.polls.copy()
-        u["as_of"] = pd.Timestamp(result.as_of)
-        used.append(u)
+        if variant == "raw":
+            u = rp.polls.copy()
+            u["as_of"] = pd.Timestamp(result.as_of)
+            used.append(u)
     summary_df = pd.concat(summaries, ignore_index=True)
     used_df = pd.concat(used, ignore_index=True)
     con.execute("CREATE OR REPLACE TABLE projection_2026_summary AS SELECT * FROM summary_df")

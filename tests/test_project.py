@@ -139,3 +139,34 @@ def test_project_election_end_to_end(tmp_db, tmp_data_dir):
     n = tmp_db.execute("SELECT COUNT(*) FROM projection_2026_summary").fetchone()[0]
     assert n == 3 + 2
     assert (tmp_data_dir / "parquet" / "projection_2026_polls.parquet").exists()
+
+
+def test_main_scenarios_round2_drops_third_candidate_and_prefers_pure_pair():
+    rows = []
+    for cen, cands in [(0, [("Lula", 44), ("Flávio Bolsonaro", 46), ("Augusto Cury", 45), ("brancos", 8)]),
+                       (1, [("Lula", 47), ("Flávio Bolsonaro", 45), ("brancos", 8)])]:
+        for name, pct in cands:
+            rows.append(dict(poll_id=9, instituto="X", pollster_display_name="X", data=pd.Timestamp("2026-09-20"),
+                             contratante="x", entrevistas=2000, margem=2, registro="r", turno=2, cenario_idx=cen,
+                             nome_candidato=name, candidate_key=candidate_key(name), partido=None, percentual=pct,
+                             is_valid_candidate=not name.startswith("brancos")))
+    r2 = P.main_scenarios(pd.DataFrame(rows), 2)
+    assert r2["cenario_idx"].unique().tolist() == [1]
+    assert set(r2[r2["is_valid_candidate"]]["nome_candidato"]) == {"Lula", "Flávio Bolsonaro"}
+
+
+def _scenario_rows(pid, cen, cands, turno=1):
+    return [dict(poll_id=pid, instituto="X", pollster_display_name="X", data=pd.Timestamp("2026-09-20"),
+                 contratante="x", entrevistas=2000, margem=2, registro="r", turno=turno, cenario_idx=cen,
+                 nome_candidato=name, candidate_key=candidate_key(name), partido=None, percentual=pct,
+                 is_valid_candidate=not name.startswith("brancos")) for name, pct in cands]
+
+
+def test_main_scenarios_round1_requires_both_leaders_and_a_complete_scenario():
+    rows = (_scenario_rows(1, 0, [("Lula", 43), ("Romeu Zema", 3), ("brancos", 2)])            # Flávio missing
+            + _scenario_rows(2, 0, [("Lula", 40), ("Flávio Bolsonaro", 28)])                   # sums to 68
+            + _scenario_rows(3, 0, [("Lula", 40), ("Flávio Bolsonaro", 36), ("Augusto Cury", 6), ("brancos", 10)])
+            + _scenario_rows(3, 1, [("Lula", 41), ("Michelle Bolsonaro", 35), ("Augusto Cury", 6), ("Romeu Zema", 5), ("brancos", 10)]))
+    r1 = P.main_scenarios(pd.DataFrame(rows), 1)
+    assert r1["poll_id"].unique().tolist() == [3]
+    assert r1["cenario_idx"].unique().tolist() == [0]

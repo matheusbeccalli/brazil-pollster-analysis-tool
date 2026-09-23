@@ -104,3 +104,4 @@ PROJECTION_N_SIMS = 10_000
 PROJECTION_SEED = 2026
 PROJECTION_RUNOFF_PAIR = ("Lula", "Flávio Bolsonaro")
 PROJECTION_HISTORY_YEARS = (2022,)     # 2018 presidential rows are mis-matched; excluded
+PROJECTION_MIN_SCENARIO_TOTAL = 85.0   # scenarios summing less are incomplete API rows

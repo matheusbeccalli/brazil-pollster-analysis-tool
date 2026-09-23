@@ -89,6 +89,28 @@ def run(since, force):
 
 
 @cli.command()
+@click.option("--as-of", "as_of", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
+              help="Reference date (default: today).")
+@click.option("--window-days", default=config.PROJECTION_WINDOW_DAYS, type=int, show_default=True,
+              help="Use polls from the last N days.")
+@click.option("--sims", default=config.PROJECTION_N_SIMS, type=int, show_default=True,
+              help="Number of Monte Carlo simulations.")
+def project(as_of, window_days, sims):
+    """Project the 2026 presidential election (1st and 2nd round) from recent polls."""
+    from pollster.stages.project import project_election
+    from pollster.stages.project_report import generate_projection_report
+    data_dir = pathlib.Path(config.DATA_DIR_NAME)
+    con = db_module.get_connection(data_dir)
+    result = project_election(con, as_of=as_of.date() if as_of else None,
+                              window_days=window_days, n_sims=sims, data_dir=data_dir)
+    all_polls = con.execute("SELECT * FROM polls_2026").fetchdf()
+    output_path = data_dir / "reports" / "projecao_2026.html"
+    generate_projection_report(result, all_polls, output_path)
+    con.close()
+    click.echo(f"Projection report written to {output_path}")
+
+
+@cli.command()
 @click.argument("sql", required=False)
 @click.option("--sql-file", type=click.Path(exists=True), help="Read SQL from a file.")
 @click.option("--format", "fmt", default="table",

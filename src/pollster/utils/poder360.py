@@ -47,21 +47,33 @@ def is_valid_candidate(name: str) -> bool:
     return bool(key) and not any(p in key for p in NON_VALID_PATTERNS)
 
 
-def split_scenarios(entries: list[dict]) -> list[list[dict]]:
-    """The API flattens several scenarios into one list; a repeated name starts a new one."""
+def split_scenarios(entries: list[dict], overflow: float = 103.0) -> list[list[dict]]:
+    """The API flattens several scenarios into one list.
+
+    A new scenario starts when a candidate name repeats, or when a valid candidate
+    follows the blank/undecided block and adding it would push the running total
+    past ``overflow`` (the previous scenario was already complete).
+    """
     scenarios: list[list[dict]] = []
     current: list[dict] = []
     seen: set[str] = set()
+    total = 0.0
+    prev_valid = True
     for e in entries:
         name = e.get("nome")
         if not name:
             continue
         key = candidate_key(name)
-        if key in seen:
+        valid = is_valid_candidate(name)
+        pct = e.get("percentual") or 0.0
+        overflow_break = valid and not prev_valid and current and total + pct > overflow
+        if key in seen or overflow_break:
             scenarios.append(current)
-            current, seen = [], set()
+            current, seen, total = [], set(), 0.0
         current.append(e)
         seen.add(key)
+        total += pct
+        prev_valid = valid
     if current:
         scenarios.append(current)
     return scenarios

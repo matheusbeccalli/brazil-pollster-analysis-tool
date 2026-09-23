@@ -73,3 +73,24 @@ def test_polls_to_frame_uses_contratante_when_instituto_blank():
 
 def test_polls_to_frame_empty_input():
     assert polls_to_frame([], turno=2).empty
+
+
+def test_split_scenarios_breaks_after_blank_block_when_sum_would_overflow():
+    # PoderData runoff: three matchups flattened; Cury (45) after the blank/undecided block
+    # belongs to the next scenario because 46+44+8+2 already sums to 100.
+    flat = [{"nome": "Flávio Bolsonaro", "percentual": 46}, {"nome": "Lula", "percentual": 44},
+            {"nome": "brancos / nulos", "percentual": 8}, {"nome": "não sabem", "percentual": 2},
+            {"nome": "Augusto Cury", "percentual": 45}, {"nome": "Lula", "percentual": 42},
+            {"nome": "brancos / nulos", "percentual": 11}, {"nome": "não sabem", "percentual": 2},
+            {"nome": "Flávio Bolsonaro", "percentual": 43}, {"nome": "Augusto Cury", "percentual": 36},
+            {"nome": "brancos / nulos", "percentual": 18}, {"nome": "não sabem", "percentual": 2}]
+    scen = split_scenarios(flat)
+    assert [[e["nome"] for e in s if is_valid_candidate(e["nome"])] for s in scen] == [
+        ["Flávio Bolsonaro", "Lula"], ["Augusto Cury", "Lula"], ["Flávio Bolsonaro", "Augusto Cury"]]
+
+
+def test_split_scenarios_keeps_late_candidate_when_sum_has_room():
+    flat = [{"nome": "Lula", "percentual": 39}, {"nome": "Flávio Bolsonaro", "percentual": 36},
+            {"nome": "Augusto Cury", "percentual": 6}, {"nome": "brancos / nulos", "percentual": 9},
+            {"nome": "indecisos", "percentual": 7}, {"nome": "Renan Santos", "percentual": 3}]
+    assert len(split_scenarios(flat)) == 1

@@ -69,22 +69,30 @@ def historical_sigma_margin(con: duckdb.DuckDBPyConnection) -> float:
 
 
 def main_scenarios(polls: pd.DataFrame, turno: int) -> pd.DataFrame:
-    """Round 1: scenario with most valid candidates. Round 2: the configured pair."""
+    """One scenario per poll.
+
+    Only scenarios that contain both configured leaders and whose entries sum to at
+    least ``PROJECTION_MIN_SCENARIO_TOTAL`` (incomplete API rows otherwise) qualify.
+    Round 1 keeps the qualifying scenario with most valid candidates; round 2 keeps
+    the one with fewest (the pure head-to-head) and drops any third name.
+    """
     df = polls[polls["turno"] == turno]
     if df.empty:
         return df
+    pair = {candidate_key(n) for n in config.PROJECTION_RUNOFF_PAIR}
+    grouped = df.groupby(["poll_id", "cenario_idx"])
+    cand = pd.concat([
+        grouped["candidate_key"].agg(lambda s: len(pair & set(s))).rename("k"),
+        grouped["is_valid_candidate"].sum().rename("n_valid"),
+        grouped["percentual"].sum().rename("total"),
+    ], axis=1).reset_index()
+    cand = cand[(cand["k"] == len(pair)) & (cand["total"] >= config.PROJECTION_MIN_SCENARIO_TOTAL)]
     if turno == 1:
-        sizes = (df[df["is_valid_candidate"]]
-                 .groupby(["poll_id", "cenario_idx"]).size().rename("n_valid").reset_index())
-        best = (sizes.sort_values(["poll_id", "n_valid", "cenario_idx"],
-                                  ascending=[True, False, True])
-                .drop_duplicates("poll_id")[["poll_id", "cenario_idx"]])
+        cand = cand.sort_values(["poll_id", "n_valid", "cenario_idx"], ascending=[True, False, True])
     else:
-        pair = {candidate_key(n) for n in config.PROJECTION_RUNOFF_PAIR}
-        has = (df[df["candidate_key"].isin(pair)]
-               .groupby(["poll_id", "cenario_idx"])["candidate_key"].nunique()
-               .rename("k").reset_index())
-        best = has[has["k"] == len(pair)].drop_duplicates("poll_id")[["poll_id", "cenario_idx"]]
+        cand = cand.sort_values(["poll_id", "n_valid", "cenario_idx"])
+        df = df[~df["is_valid_candidate"] | df["candidate_key"].isin(pair)]
+    best = cand.drop_duplicates("poll_id")[["poll_id", "cenario_idx"]]
     return df.merge(best, on=["poll_id", "cenario_idx"], how="inner")
 
 

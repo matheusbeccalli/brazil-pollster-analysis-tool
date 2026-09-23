@@ -94,6 +94,7 @@ def _select_scenario(poll_group: pd.DataFrame, top2_names: list[str],
         for official_name in top2_names:
             m = match_candidate_name(
                 official_name, cands_in_scenario,
+                poll_party=top2_parties.get(official_name),
                 official_parties=parties_in_scenario,
             )
             if m is not None:

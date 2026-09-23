@@ -14,6 +14,8 @@ DEFAULT_SINCE_YEAR = 2014
 
 # A pollster's 'final' poll must be at most this many days before election day.
 FINAL_POLL_MAX_DAYS = 30
+# Scenarios whose percentages add up to more than this are several scenarios glued together.
+MAX_SCENARIO_TOTAL = 105.0
 
 PARTY_LEANING: dict[str, str] = {
     # Left

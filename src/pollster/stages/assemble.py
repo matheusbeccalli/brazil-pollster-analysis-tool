@@ -18,15 +18,19 @@ def _normalize_uf(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    # Votes are summed per candidate (sequencial) regardless of party spelling variants;
+    # candidates are joined by year + sequencial + UF because the TSE reuses placeholder
+    # sequenciais (e.g. 10000 in 2006) across states.
     df = con.execute("""
         WITH aggregated AS (
             SELECT ano, turno, cargo,
                    COALESCE(sigla_uf, 'BR') AS sigla_uf,
-                   sequencial_candidato, sigla_partido,
+                   sequencial_candidato,
+                   MAX(sigla_partido) AS sigla_partido,
                    SUM(votos) AS votos
             FROM tse_results
             WHERE votos IS NOT NULL
-            GROUP BY ano, turno, cargo, COALESCE(sigla_uf, 'BR'), sequencial_candidato, sigla_partido
+            GROUP BY ano, turno, cargo, COALESCE(sigla_uf, 'BR'), sequencial_candidato
         )
         SELECT *,
                SUM(votos) OVER (PARTITION BY ano, turno, cargo, sigla_uf) AS total_votos,
@@ -39,14 +43,13 @@ def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     df["votos_validos_pct"] = df["votos"] / df["total_votos"] * 100.0
     top2 = df[df["rank"] <= 2].copy()
 
-    candidates = con.execute("SELECT * FROM tse_candidates").fetchdf()
-    top2 = top2.merge(
-        candidates[["ano", "sequencial", "nome", "nome_urna", "sigla_partido"]].rename(
-            columns={"sigla_partido": "cand_partido", "sequencial": "sequencial_candidato"}
-        ),
-        on=["ano", "sequencial_candidato"],
-        how="left",
-    )
+    candidates = con.execute("""
+        SELECT ano, COALESCE(sigla_uf, 'BR') AS sigla_uf, sequencial AS sequencial_candidato,
+               MAX(nome) AS nome, MAX(nome_urna) AS nome_urna, MAX(sigla_partido) AS cand_partido
+        FROM tse_candidates
+        GROUP BY ano, COALESCE(sigla_uf, 'BR'), sequencial
+    """).fetchdf()
+    top2 = top2.merge(candidates, on=["ano", "sigla_uf", "sequencial_candidato"], how="left")
     top2["nome_candidato"] = top2["nome_urna"].fillna(top2["nome"])
     return top2
 
@@ -77,6 +80,11 @@ def _load_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 def _select_final_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     polls = _load_polls(con)
     polls["data"] = pd.to_datetime(polls["data"])
+    # Only stimulated vote-intention scenarios are comparable with results
+    # (Poder360 also stores spontaneous and rejection questions under the same poll).
+    if "tipo" in polls.columns:
+        tipo = polls["tipo"].fillna("estimulada").str.strip().str.lower()
+        polls = polls[tipo == "estimulada"]
     # condicao = 1 marks non-candidate rows (undecided, blank/null, "others");
     # they must not enter scenario selection nor the valid-vote rebase.
     if "condicao" in polls.columns:
@@ -114,6 +122,8 @@ def _select_scenario(poll_group: pd.DataFrame, top2_names: list[str],
     best = None
     best_count = -1
     for cenario, scenario_df in poll_group.groupby("id_cenario"):
+        if scenario_df["percentual"].sum() > config.MAX_SCENARIO_TOTAL:
+            continue   # several scenarios glued under one id
         cands_in_scenario = scenario_df["nome_candidato"].tolist()
         parties_in_scenario = dict(zip(scenario_df["nome_candidato"], scenario_df["sigla_partido"]))
         matched = 0

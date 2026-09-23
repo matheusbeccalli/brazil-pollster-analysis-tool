@@ -133,3 +133,70 @@ def test_assemble_ignores_final_polls_older_than_max_days(loaded_db, monkeypatch
     names = con.execute("SELECT pollster_display_name FROM polls_vs_actual").fetchdf()["pollster_display_name"].tolist()
     con.close()
     assert names == ["Datafolha"]
+
+
+def _reload(loaded_db, polls_df=None, results_df=None, candidates_df=None):
+    import pandas as pd
+    parquet_dir = loaded_db / "parquet"
+    if polls_df is not None:
+        polls_df.to_parquet(parquet_dir / "poder360_pesquisas.parquet")
+    if results_df is not None:
+        results_df.to_parquet(parquet_dir / "tse_resultados_candidato.parquet")
+    if candidates_df is not None:
+        candidates_df.to_parquet(parquet_dir / "tse_candidatos.parquet")
+    con = get_connection(loaded_db)
+    register_parquet(con, "poder360_polls", parquet_dir / "poder360_pesquisas.parquet")
+    register_parquet(con, "tse_results", parquet_dir / "tse_resultados_candidato.parquet")
+    register_parquet(con, "tse_candidates", parquet_dir / "tse_candidatos.parquet")
+    return con
+
+
+def test_assemble_ignores_spontaneous_and_rejection_scenarios(loaded_db):
+    import pandas as pd
+    polls = pd.read_parquet(loaded_db / "parquet" / "poder360_pesquisas.parquet")
+    # AtlasIntel's only scenario becomes a rejection poll; Datafolha gets an extra spontaneous scenario
+    polls.loc[polls["instituto"] == "AtlasIntel", "tipo"] = "rejeição"
+    extra = polls[polls["instituto"] == "Datafolha"].copy()
+    extra["tipo"] = "espontânea"; extra["id_cenario"] = "C9"; extra["percentual"] = extra["percentual"] / 3
+    polls = pd.concat([polls, extra], ignore_index=True)
+    con = _reload(loaded_db, polls_df=polls)
+    assemble_data(con)
+    rows = con.execute("SELECT pollster_display_name, candidate_1_poll_raw_pct FROM polls_vs_actual").fetchdf()
+    con.close()
+    assert rows["pollster_display_name"].tolist() == ["Datafolha"]
+    assert rows.iloc[0]["candidate_1_poll_raw_pct"] == 48.0     # the stimulated scenario, not the spontaneous one
+
+
+def test_assemble_skips_scenarios_whose_total_exceeds_100(loaded_db):
+    import pandas as pd
+    polls = pd.read_parquet(loaded_db / "parquet" / "poder360_pesquisas.parquet")
+    # glue a second copy of Datafolha's rows into the same id_cenario -> total 192%
+    dup = polls[polls["instituto"] == "Datafolha"].copy()
+    polls = pd.concat([polls, dup], ignore_index=True)
+    con = _reload(loaded_db, polls_df=polls)
+    assemble_data(con)
+    names = con.execute("SELECT pollster_display_name FROM polls_vs_actual").fetchdf()["pollster_display_name"].tolist()
+    con.close()
+    assert names == ["AtlasIntel"]
+
+
+def test_assemble_actual_results_merge_by_uf_and_ignore_party_variants(loaded_db):
+    import pandas as pd
+    results = pd.read_parquet(loaded_db / "parquet" / "tse_resultados_candidato.parquet")
+    cands = pd.read_parquet(loaded_db / "parquet" / "tse_candidatos.parquet")
+    # 1. Bolsonaro's votes split across two party spellings -> must still be summed as one candidate
+    split = results[results["sequencial_candidato"] == "seq2"].copy()
+    results.loc[results["sequencial_candidato"] == "seq2", "votos"] //= 2
+    split["votos"] = split["votos"] // 2; split["sigla_partido"] = "PL "
+    results = pd.concat([results, split], ignore_index=True)
+    # 2. a governor candidate in another state shares Lula's sequencial (TSE placeholder) -> must not duplicate Lula
+    ghost = cands[cands["sequencial"] == "seq1"].copy()
+    ghost["sigla_uf"] = "RR"; ghost["cargo"] = "governador"; ghost["nome_urna"] = "OTTOMAR"; ghost["nome"] = "OTTOMAR DE SOUSA PINTO"
+    cands = pd.concat([cands, ghost], ignore_index=True)
+    con = _reload(loaded_db, results_df=results, candidates_df=cands)
+    assemble_data(con)
+    rows = con.execute("SELECT candidate_1_name, candidate_2_name, candidate_1_actual_valid_pct, candidate_2_actual_valid_pct "
+                       "FROM polls_vs_actual WHERE pollster_display_name='Datafolha'").fetchdf()
+    con.close()
+    assert set(rows.iloc[0][["candidate_1_name", "candidate_2_name"]]) == {"LULA", "BOLSONARO"}
+    assert rows.iloc[0]["candidate_1_actual_valid_pct"] != rows.iloc[0]["candidate_2_actual_valid_pct"]

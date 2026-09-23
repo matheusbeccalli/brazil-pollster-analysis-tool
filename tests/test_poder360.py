@@ -1,3 +1,4 @@
+import pandas as pd
 from pollster.utils.poder360 import (parse_sample_size, is_valid_candidate, split_scenarios,
                                      polls_to_frame, candidate_key, normalize_pollster_2026)
 
@@ -112,4 +113,37 @@ def test_backend_to_polls_schema():
     assert df["sigla_uf"].unique().tolist() == ["BR"] and df["cargo"].unique().tolist() == ["presidente"]
     assert df["condicao"].tolist() == [0, 0, 1]
     assert df["id_cenario"].unique().tolist() == ["77-0"]
+    assert df["instituto"].iloc[0] == "Datafolha"
     assert df["quantidade_entrevistas"].iloc[0] == 18116
+
+
+def test_backend_to_polls_schema_uses_normalized_pollster_name():
+    from pollster.utils.poder360 import backend_to_polls_schema
+    raw = [{"id": 8, "instituto": "Parana\u0301", "data": "2018-10-04", "entrevistas": 2000, "margem": 2,
+            "apuracoes": [[{"nome": "Jair Bolsonaro", "partido": "PSL", "percentual": 35}]]}]
+    long = polls_to_frame(raw, turno=1); long.insert(0, "ano", 2018)
+    assert backend_to_polls_schema(long)["instituto"].iloc[0] == "Paraná Pesquisas"
+
+
+def test_polls_to_frame_accepts_mongo_decimal_percentual():
+    raw = [{"id": 3, "instituto": "Ibope", "data": "2002-10-05", "entrevistas": 3000,
+            "apuracoes": [[{"nome": "Lula", "partido": "PT", "percentual": {"$numberDecimal": "46.00"}},
+                            {"nome": "Serra", "partido": "PSDB", "percentual": "23.5"},
+                            {"nome": "brancos / nulos", "percentual": None}]]}]
+    df = polls_to_frame(raw, turno=1)
+    assert df["percentual"].tolist()[:2] == [46.0, 23.5]
+    assert pd.isna(df["percentual"].iloc[2])
+    assert df["pollster_display_name"].iloc[0] == "IBOPE/Ipec"
+
+
+def test_polls_to_frame_accepts_mongo_decimal_margem_and_entrevistas():
+    raw = [{"id": 4, "instituto": "Ibope", "data": "2002-10-05",
+            "entrevistas": {"$numberDecimal": "3000"}, "margem": {"$numberDecimal": "2.00"},
+            "apuracoes": [[{"nome": "Lula", "partido": "PT", "percentual": {"$numberDecimal": "46.00"}}]]}]
+    df = polls_to_frame(raw, turno=1)
+    assert df["entrevistas"].iloc[0] == 3000 and df["margem"].iloc[0] == 2.0
+
+
+def test_normalize_pollster_2026_handles_decomposed_accents():
+    assert normalize_pollster_2026("Paraná") == "Paraná Pesquisas"
+    assert normalize_pollster_2026("Paraná Pesquisas") == "Paraná Pesquisas"

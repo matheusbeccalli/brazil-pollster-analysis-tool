@@ -12,6 +12,9 @@ ELECTIONS: dict[int, dict[str, date]] = {
 
 DEFAULT_SINCE_YEAR = 2014
 
+# A pollster's 'final' poll must be at most this many days before election day.
+FINAL_POLL_MAX_DAYS = 30
+
 PARTY_LEANING: dict[str, str] = {
     # Left
     "PT": "left",

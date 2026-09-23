@@ -27,15 +27,22 @@ def candidate_key(name: str) -> str:
     return " ".join(_strip_accents(name or "").lower().split())
 
 
-def parse_sample_size(value) -> int | None:
-    """The API returns '2.006' (thousands separator) as the float 2.006."""
-    if value is None:
+def parse_pct(value) -> float | None:
+    """Percentages come as numbers, strings or Mongo `{"$numberDecimal": "19.00"}` objects."""
+    if isinstance(value, dict):
+        value = value.get("$numberDecimal")
+    if value in (None, ""):
         return None
     try:
-        v = float(value)
+        return float(value)
     except (TypeError, ValueError):
         return None
-    if v <= 0:
+
+
+def parse_sample_size(value) -> int | None:
+    """The API returns '2.006' (thousands separator) as the float 2.006."""
+    v = parse_pct(value)
+    if v is None or v <= 0:
         return None
     if v < 100:
         v *= 1000
@@ -65,7 +72,7 @@ def split_scenarios(entries: list[dict], overflow: float = 103.0) -> list[list[d
             continue
         key = candidate_key(name)
         valid = is_valid_candidate(name)
-        pct = e.get("percentual") or 0.0
+        pct = parse_pct(e.get("percentual")) or 0.0
         overflow_break = valid and not prev_valid and current and total + pct > overflow
         if key in seen or overflow_break:
             scenarios.append(current)
@@ -80,7 +87,7 @@ def split_scenarios(entries: list[dict], overflow: float = 103.0) -> list[list[d
 
 
 def normalize_pollster_2026(raw_name: str) -> str:
-    name = (raw_name or "").strip()
+    name = unicodedata.normalize("NFC", (raw_name or "")).strip()
     name = POLLSTER_ALIASES_PODER360.get(name, name)
     return normalize_pollster_name(name)
 
@@ -96,7 +103,7 @@ def polls_to_frame(raw: list[dict], turno: int) -> pd.DataFrame:
             "data": pd.to_datetime(str(poll.get("data") or "")[:10], errors="coerce"),
             "contratante": poll.get("contratante"),
             "entrevistas": parse_sample_size(poll.get("entrevistas")),
-            "margem": poll.get("margem"),
+            "margem": parse_pct(poll.get("margem")),
             "registro": poll.get("registro"),
             "turno": turno,
         }
@@ -108,7 +115,7 @@ def polls_to_frame(raw: list[dict], turno: int) -> pd.DataFrame:
                     rows.append({**base, "cenario_idx": idx, "nome_candidato": name,
                                  "candidate_key": candidate_key(name),
                                  "partido": e.get("partido"),
-                                 "percentual": e.get("percentual"),
+                                 "percentual": parse_pct(e.get("percentual")),
                                  "is_valid_candidate": is_valid_candidate(name)})
                 idx += 1
     return pd.DataFrame(rows, columns=FRAME_COLUMNS)
@@ -125,7 +132,7 @@ def backend_to_polls_schema(long_df: pd.DataFrame) -> pd.DataFrame:
         "cargo": "presidente",
         "data": pd.to_datetime(df["data"]),
         "data_referencia": None,
-        "instituto": df["instituto"],
+        "instituto": df["pollster_display_name"],
         "contratante": df["contratante"],
         "orgao_registro": None,
         "numero_registro": df["registro"],

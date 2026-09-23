@@ -4,10 +4,12 @@ import click
 import duckdb
 import pandas as pd
 
+from pollster import config
 from pollster.config import ELECTIONS, PARTY_LEANING
 from pollster.utils.normalize import normalize_pollster_name
 from pollster.utils.rebase import rebase_to_valid_votes
 from pollster.utils.candidates import match_candidate_name
+from pollster.utils.poder360 import backend_to_polls_schema
 
 
 def _normalize_uf(df: pd.DataFrame) -> pd.DataFrame:
@@ -49,8 +51,31 @@ def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return top2
 
 
-def _select_final_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    return con.execute(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?", [name]
+    ).fetchone()[0] > 0
+
+
+def _load_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Base dos Dados polls, with national presidential rows replaced by the Poder360
+    backend table (`poder360_presidential`) when it is available."""
     polls = con.execute("SELECT * FROM poder360_polls").fetchdf()
+    if not _table_exists(con, "poder360_presidential"):
+        return polls
+    backend = con.execute("SELECT * FROM poder360_presidential").fetchdf()
+    if backend.empty:
+        return polls
+    national = (polls["cargo"].str.lower().eq("presidente")
+                & (polls["sigla_uf"].isna() | polls["sigla_uf"].eq("BR")))
+    polls = polls[~national]
+    converted = backend_to_polls_schema(backend)
+    converted = converted[[c for c in polls.columns if c in converted.columns]]
+    return pd.concat([polls, converted], ignore_index=True)
+
+
+def _select_final_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    polls = _load_polls(con)
     polls["data"] = pd.to_datetime(polls["data"])
     # condicao = 1 marks non-candidate rows (undecided, blank/null, "others");
     # they must not enter scenario selection nor the valid-vote rebase.
@@ -70,7 +95,8 @@ def _select_final_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         if election_day is None:
             continue
 
-        before = group[group["data"].dt.date <= election_day]
+        earliest = election_day - pd.Timedelta(days=config.FINAL_POLL_MAX_DAYS)
+        before = group[(group["data"].dt.date <= election_day) & (group["data"].dt.date >= earliest)]
         if before.empty:
             continue
 

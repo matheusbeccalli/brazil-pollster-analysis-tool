@@ -58,7 +58,7 @@ Apos a instalacao, o comando `pollster` estara disponivel no terminal (enquanto 
 pollster --help
 ```
 
-Deve mostrar os subcomandos disponiveis: `fetch`, `fetch-2026`, `fetch-markets`, `assemble`, `analyze`, `report`, `project`, `run`, `query`.
+Deve mostrar os subcomandos disponiveis: `fetch`, `fetch-poder360`, `fetch-2026`, `fetch-markets`, `assemble`, `analyze`, `report`, `project`, `run`, `query`.
 
 ## Como Executar
 
@@ -196,7 +196,8 @@ pollster query --format parquet --output resultado.parquet "SELECT * FROM poll_l
 | `pollster_rankings_by_year` | Rankings por ano eleitoral |
 | `pollster_rankings_by_round` | Rankings por turno |
 | `pollster_rankings_by_race_type` | Rankings por tipo de disputa (presidente/governador) |
-| `polls_2026` | Pesquisas presidenciais de 2026 (Poder360 agregador) |
+| `poder360_presidential` | Pesquisas presidenciais nacionais 2002-2026 (Poder360 agregador) |
+| `polls_2026` | Recorte de 2026 da tabela acima |
 | `projection_2026_summary` | Projecao por candidato e turno |
 | `projection_2026_polls` | Pesquisas e pesos usados na projecao |
 | `pm_markets` | Mercados de previsao (Kalshi, Polymarket) sobre a eleicao |
@@ -232,7 +233,7 @@ src/pollster/
 ├── db.py               # Helper DuckDB
 ├── stages/
 │   ├── fetch.py        # Etapa 1: download do Base dos Dados via BigQuery
-│   ├── fetch2026.py    # Pesquisas 2026 do agregador do Poder360
+│   ├── fetch_poder360.py # Pesquisas presidenciais 2002-2026 do agregador do Poder360
 │   ├── fetch_markets.py # Mercados de previsao (Kalshi, Polymarket), so armazenamento
 │   ├── project.py      # Projecao 2026: pesos, media ponderada, Monte Carlo
 │   ├── project_report.py # Relatorio HTML da projecao
@@ -255,15 +256,18 @@ Todos acessados via [Base dos Dados](https://basedosdados.org/), uma iniciativa 
 
 ## Projecao 2026 (1o e 2o turno)
 
-O Base dos Dados parou de atualizar as pesquisas do Poder360 em nov/2023, entao as pesquisas
-da campanha de 2026 vem direto do backend aberto do agregador do Poder360
-(`monitor-agregador.poder360.com.br`, sem login para o ciclo de 2026).
+O Base dos Dados parou de atualizar as pesquisas do Poder360 em nov/2023 e nao tem as pesquisas
+presidenciais de 2018. Por isso as pesquisas presidenciais nacionais de **2002 a 2026** vem direto do
+backend aberto do agregador do Poder360 (`monitor-agregador.poder360.com.br`, sem login). As pesquisas
+para governador continuam vindo do Base dos Dados.
 
 ```bash
 source .venv/bin/activate
 
-# 1. Baixar as pesquisas presidenciais de 2026 (turnos 1 e 2). Use --force para atualizar.
-pollster fetch-2026 --force
+# 1. Baixar as pesquisas presidenciais (2002-2026, turnos 1 e 2). Use --force para atualizar.
+pollster fetch-poder360 --force            # todos os anos
+pollster fetch-2026 --force                # so 2026 (mais rapido, para atualizar a campanha)
+pollster assemble && pollster analyze --since 2000 && pollster report   # recalcula a precisao historica
 
 # 2. Gerar a projecao (requer o relatorio de precisao ja calculado: assemble + analyze)
 pollster project                          # data de referencia = hoje
@@ -275,10 +279,13 @@ O relatorio sai em `data/reports/projecao_2026.html`. As tabelas `polls_2026`,
 `projection_2026_summary` e `projection_2026_polls` ficam disponiveis para `pollster query`.
 
 **Metodo (resumo):** uma pesquisa por instituto nos ultimos 14 dias; percentuais rebaseados para votos
-validos; media ponderada por precisao historica (EAM presidencial de 2022 deste projeto), recencia
-(`exp(-idade/7)`) e amostra (`sqrt(n/2000)`); 10.000 simulacoes Monte Carlo com choque na margem
-entre os dois lideres (`sigma` = maior entre 3 pp e o RMSE historico da media dos institutos).
-Institutos sem historico recebem o peso mediano. Uso pessoal, nao e previsao profissional.
+validos; media ponderada por precisao historica (EAM presidencial 2002-2022 deste projeto, com peso por
+recencia que cai pela metade a cada duas eleicoes), recencia (`exp(-idade/7)`) e amostra (`sqrt(n/2000)`);
+10.000 simulacoes Monte Carlo com choque na margem entre os dois lideres (`sigma` por turno = maior entre
+3 pp e o RMSE historico da media dos institutos naquele turno). Institutos sem historico recebem o peso
+mediano. O relatorio traz duas variantes: **sem correcao** e **com correcao de vies historico** (a margem
+esquerda-direita e deslocada pelo erro medio ponderado das eleicoes passadas). Uso pessoal, nao e previsao
+profissional.
 
 ## Mercados de Previsao (Kalshi e Polymarket)
 

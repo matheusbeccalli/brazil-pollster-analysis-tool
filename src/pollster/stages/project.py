@@ -41,6 +41,7 @@ class ProjectionResult:
     bias_table: pd.DataFrame | None = None   # per-election errors behind bias_margin
     round1_adj: RoundProjection | None = None
     round2_adj: RoundProjection | None = None
+    sigma_margin_r1: float | None = None     # first-round sigma (sigma_margin is the runoff one)
 
 
 def history_weight(year: int) -> float:
@@ -80,9 +81,15 @@ def _race_margin_errors(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return df
 
 
-def historical_sigma_margin(con: duckdb.DuckDBPyConnection) -> float:
-    """RMSE of the poll-average error on the top-2 margin over all races, floored."""
+def historical_sigma_margin(con: duckdb.DuckDBPyConnection, turno: int | None = None) -> float:
+    """RMSE of the poll-average error on the top-2 margin, floored.
+
+    With `turno`, only races of that round are used (first-round errors are historically
+    much larger than runoff errors); without it, all races.
+    """
     df = _race_margin_errors(con)
+    if turno is not None:
+        df = df[df["round"] == turno]
     rmse = float(np.sqrt(np.mean(np.square(df["error"].values)))) if len(df) else 0.0
     return max(rmse, config.PROJECTION_SIGMA_FLOOR)
 
@@ -255,16 +262,16 @@ def project_election(con: duckdb.DuckDBPyConnection, as_of: date | None = None,
     polls = con.execute("SELECT * FROM polls_2026").fetchdf()
     polls["data"] = pd.to_datetime(polls["data"])
     eam, median_eam = pollster_accuracy(con)
-    sigma_margin = historical_sigma_margin(con)
+    sigma_by_round = {t: historical_sigma_margin(con, turno=t) for t in (1, 2)}
     sigma_other = config.PROJECTION_SIGMA_OTHER
     bias, bias_table = historical_margin_bias(con)
-    click.echo(f"Projecting as of {as_of} (window {window_days}d, sigma_margin {sigma_margin:.2f} pp, "
-               f"historical left-right bias {bias:+.2f} pp, {n_sims} sims)...")
+    click.echo(f"Projecting as of {as_of} (window {window_days}d, sigma_margin R1 {sigma_by_round[1]:.2f} / "
+               f"R2 {sigma_by_round[2]:.2f} pp, historical left-right bias {bias:+.2f} pp, {n_sims} sims)...")
 
     def run(turno: int, shift: float) -> RoundProjection | None:
         rng = np.random.default_rng(config.PROJECTION_SEED + turno)
         return project_round(polls, turno, as_of, window_days, eam, median_eam,
-                             sigma_margin, sigma_other, n_sims, rng, bias=shift)
+                             sigma_by_round[turno], sigma_other, n_sims, rng, bias=shift)
 
     r1 = run(1, 0.0)
     if r1 is None:
@@ -273,8 +280,9 @@ def project_election(con: duckdb.DuckDBPyConnection, as_of: date | None = None,
     r1_adj = r2_adj = None
     if config.PROJECTION_BIAS_CORRECTION:
         r1_adj, r2_adj = run(1, bias), run(2, bias)
-    result = ProjectionResult(as_of, window_days, sigma_margin, sigma_other, n_sims,
-                              eam, median_eam, r1, r2, bias, bias_table, r1_adj, r2_adj)
+    result = ProjectionResult(as_of, window_days, sigma_by_round[2], sigma_other, n_sims,
+                              eam, median_eam, r1, r2, bias, bias_table, r1_adj, r2_adj,
+                              sigma_margin_r1=sigma_by_round[1])
     _persist(con, result, data_dir)
     return result
 

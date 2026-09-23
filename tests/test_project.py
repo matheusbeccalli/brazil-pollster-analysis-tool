@@ -112,11 +112,14 @@ def test_historical_sigma_margin_uses_floor(tmp_db):
     assert P.historical_sigma_margin(tmp_db) == pytest.approx(3.0)
 
 
-def test_historical_sigma_margin_above_floor_across_years(tmp_db):
+def test_historical_sigma_margin_is_per_round_with_overall_fallback(tmp_db):
     tmp_db.execute("""CREATE TABLE poll_level_metrics AS SELECT * FROM (VALUES
-        (2022, 1, 'presidente', 'A', 10.0, 5.0, 'left', 'right'), (2018, 1, 'presidente', 'A', 6.0, 2.0, 'right', 'left'))
+        (2022, 1, 'presidente', 'A', 10.0, 5.0, 'left', 'right'), (2018, 1, 'presidente', 'A', 6.0, 2.0, 'right', 'left'),
+        (2022, 2, 'presidente', 'A', 5.0, 4.0, 'left', 'right'))
         t(year, round, cargo, pollster_display_name, predicted_margin, actual_margin, candidate_1_leaning, candidate_2_leaning)""")
-    assert P.historical_sigma_margin(tmp_db) == pytest.approx(np.sqrt((25 + 16) / 2))
+    assert P.historical_sigma_margin(tmp_db, turno=1) == pytest.approx(np.sqrt((25 + 16) / 2))
+    assert P.historical_sigma_margin(tmp_db, turno=2) == pytest.approx(3.0)        # RMSE 1 -> floor
+    assert P.historical_sigma_margin(tmp_db) == pytest.approx(np.sqrt((25 + 16 + 1) / 3))
 
 
 def test_pollster_accuracy_is_recency_weighted_over_presidential_races(tmp_db):

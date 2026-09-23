@@ -169,14 +169,34 @@ def _polls_table(rp: RoundProjection) -> str:
     return _render_table(meta)
 
 
-def _summary_table(rp: RoundProjection) -> str:
-    est = rp.estimate.copy()
+def _summary_table(rp: RoundProjection, adj: RoundProjection | None = None) -> str:
+    frames = []
+    for label, r in (("sem correcao", rp), ("com correcao de vies", adj)):
+        if r is None:
+            continue
+        est = r.estimate
+        frames.append(pd.DataFrame({
+            "Variante": label, "Candidato": est["candidate"], "Partido": est["partido"],
+            "Media ponderada": est["weighted_pct"], "Media simples": est["simple_pct"],
+            "IC 90% inf": est["ci_low"], "IC 90% sup": est["ci_high"],
+            "P(1o lugar)": est["p_first"].map(_fmt_prob), "P(top 2)": est["p_top2"].map(_fmt_prob),
+            "Pesquisas": est["n_polls"],
+        }))
+    out = pd.concat(frames, ignore_index=True)
+    if adj is None:
+        out = out.drop(columns=["Variante"])
+    return _render_table(out, float_fmt=".1f")
+
+
+def _bias_table(result: ProjectionResult) -> str:
+    t = result.bias_table
+    if t is None or t.empty:
+        return "<p>Sem disputas historicas com um candidato de esquerda e um de direita.</p>"
     out = pd.DataFrame({
-        "Candidato": est["candidate"], "Partido": est["partido"],
-        "Media ponderada": est["weighted_pct"], "Media simples": est["simple_pct"],
-        "IC 90% inf": est["ci_low"], "IC 90% sup": est["ci_high"],
-        "P(1o lugar)": est["p_first"].map(_fmt_prob), "P(top 2)": est["p_top2"].map(_fmt_prob),
-        "Pesquisas": est["n_polls"],
+        "Eleicao": t["year"].astype(int), "Turno": t["round"].astype(int),
+        "Institutos": t["n_polls"].astype(int),
+        "Margem prevista (media)": t["predicted_margin"], "Margem real": t["actual_margin"],
+        "Erro esq. - dir. (pp)": t["error_left_minus_right"], "Peso": t["weight"],
     })
     return _render_table(out, float_fmt=".1f")
 
@@ -216,11 +236,30 @@ def generate_projection_report(result: ProjectionResult, all_polls: pd.DataFrame
           <strong>{_fmt_prob(a['p_first'])}</strong> ({r2.polls['poll_id'].nunique()} pesquisas).</li>
         """)
     sections.append("</ul>")
+    if result.round1_adj is not None:
+        la, sa = result.round1_adj.estimate.iloc[0], result.round1_adj.estimate.iloc[1]
+        bias_txt = f"{result.bias_margin:+.1f} pp".replace(".", ",")
+        sections.append(f"""
+    <p><strong>Variante com correcao de vies historico.</strong> Desde 2002, a media dos institutos errou a margem
+    esquerda - direita em <strong>{bias_txt}</strong> (media ponderada por recencia; positivo = superestimou a esquerda).
+    Aplicando esse deslocamento:</p>
+    <ul>
+      <li><strong>1o turno:</strong> {la['candidate']} {_fmt_pct(la['weighted_pct'])} x {sa['candidate']}
+          {_fmt_pct(sa['weighted_pct'])}; chance de {la['candidate']} terminar em 1o: {_fmt_prob(la['p_first'])}.</li>
+        """)
+        if result.round2_adj is not None:
+            a2, b2 = result.round2_adj.estimate.iloc[0], result.round2_adj.estimate.iloc[1]
+            sections.append(f"""
+      <li><strong>2o turno:</strong> {a2['candidate']} {_fmt_pct(a2['weighted_pct'])} x {b2['candidate']}
+          {_fmt_pct(b2['weighted_pct'])}; chance de vitoria de {a2['candidate']}: <strong>{_fmt_prob(a2['p_first'])}</strong>.</li>
+            """)
+        sections.append("</ul>")
 
     sections.append(f"""
     <h2>1o Turno</h2>
-    {_summary_table(r1)}
-    <div class="chart">{_bar_chart(r1, '1o turno: votos validos projetados')}</div>
+    {_summary_table(r1, result.round1_adj)}
+    <div class="chart">{_bar_chart(r1, '1o turno: votos validos projetados (sem correcao)')}</div>
+    {f'<div class="chart">{_bar_chart(result.round1_adj, "1o turno: votos validos projetados (com correcao de vies)")}</div>' if result.round1_adj is not None else ''}
     <div class="chart">{_margin_hist(r1, '1o turno: distribuicao da margem entre os dois lideres')}</div>
     <div class="chart">{_timeline(all_polls, result, 1, r1.estimate['candidate_key'].tolist()[:2],
                                   '1o turno: pesquisas (pontos) e media ponderada movel (linha), desde julho')}</div>
@@ -234,8 +273,9 @@ def generate_projection_report(result: ProjectionResult, all_polls: pd.DataFrame
         a, b = r2.estimate.iloc[0], r2.estimate.iloc[1]
         sections.append(f"""
         <h2>2o Turno</h2>
-        {_summary_table(r2)}
-        <div class="chart">{_bar_chart(r2, f"2o turno: {a['candidate']} x {b['candidate']}")}</div>
+        {_summary_table(r2, result.round2_adj)}
+        <div class="chart">{_bar_chart(r2, f"2o turno: {a['candidate']} x {b['candidate']} (sem correcao)")}</div>
+        {f'<div class="chart">{_bar_chart(result.round2_adj, "2o turno: com correcao de vies")}</div>' if result.round2_adj is not None else ''}
         <div class="chart">{_margin_hist(r2, '2o turno: distribuicao da margem simulada')}</div>
         <div class="chart">{_timeline(all_polls, result, 2, r2.estimate['candidate_key'].tolist()[:2],
                                       '2o turno: pesquisas (pontos) e media ponderada movel (linha), desde julho')}</div>
@@ -249,8 +289,9 @@ def generate_projection_report(result: ProjectionResult, all_polls: pd.DataFrame
     <div class="methodology">
     <h2>Metodologia</h2>
     <h3>Dados</h3>
-    <p>Pesquisas presidenciais de 2026 do agregador do <strong>Poder360</strong> (backend aberto
-    <code>monitor-agregador.poder360.com.br</code>), turnos 1 e 2, ambito nacional. Para cada pesquisa e usado
+    <p>Pesquisas presidenciais de 2002 a 2026 do agregador do <strong>Poder360</strong> (backend aberto
+    <code>monitor-agregador.poder360.com.br</code>), turnos 1 e 2, ambito nacional. As eleicoes passadas alimentam
+    a precisao por instituto, o sigma e o vies; a de 2026 alimenta a projecao. Para cada pesquisa e usado
     o cenario principal: no 1o turno, o cenario com mais candidatos; no 2o turno, o confronto
     {pair_names[0]} x {pair_names[1]}.</p>
     <h3>Selecao e pesos</h3>
@@ -258,17 +299,26 @@ def generate_projection_report(result: ProjectionResult, all_polls: pd.DataFrame
     Percentuais rebaseados para votos validos (indecisos, brancos e nulos fora do denominador).
     Peso de cada pesquisa = <code>(EAM mediano / EAM do instituto) x exp(-idade em dias / {config.PROJECTION_RECENCY_TAU_DAYS:.0f})
     x min(sqrt(amostra / {config.PROJECTION_REFERENCE_SAMPLE}), 2)</code>.
-    O EAM vem do relatorio de precisao deste projeto (disputas presidenciais desde 2002, ambos os turnos, com peso por recencia): {known_html}. Mediana: {result.median_eam:.1f} pp. Institutos sem historico recebem a mediana (peso 1).</p>
+    O EAM vem do relatorio de precisao deste projeto (disputas presidenciais desde 2002, ambos os turnos, cada eleicao
+    com peso <code>0.5 ** ((2022 - ano) / {config.PROJECTION_HISTORY_HALF_LIFE_YEARS:.0f})</code>): {known_html}. Mediana: {result.median_eam:.1f} pp. Institutos sem historico recebem a mediana (peso 1).</p>
     <h3>Simulacao</h3>
     <p>{result.n_sims:,} simulacoes. Em cada uma, a margem entre os dois primeiros recebe um choque
-    <code>N(0, {result.sigma_margin:.1f} pp)</code> (metade para cada lado); os demais candidatos recebem ruido
+    <code>N(0, sigma)</code> (metade para cada lado), com sigma de <strong>{(result.sigma_margin_r1 or result.sigma_margin):.1f} pp no 1o turno</strong>
+    e <strong>{result.sigma_margin:.1f} pp no 2o turno</strong>; os demais candidatos recebem ruido
     <code>N(0, {result.sigma_other:.1f} pp)</code>; as parcelas sao truncadas em zero e renormalizadas a 100%.
-    O sigma da margem e o maior entre {config.PROJECTION_SIGMA_FLOOR:.1f} pp e o RMSE do erro da media dos institutos
-    na margem entre os dois primeiros nas disputas historicas usadas. Intervalos sao os percentis 5 e 95 das simulacoes.</p>
+    Cada sigma e o maior entre {config.PROJECTION_SIGMA_FLOOR:.1f} pp e o RMSE do erro da media dos institutos
+    na margem entre os dois primeiros nas disputas historicas daquele turno (2002-2022). Intervalos sao os percentis 5 e 95.</p>
+    <h3>Correcao de vies</h3>
+    <p>Para cada disputa presidencial passada com um candidato de esquerda e um de direita entre os dois primeiros,
+    calculamos o erro da media dos institutos na margem <em>esquerda - direita</em> (positivo = as pesquisas superestimaram
+    a esquerda). A media ponderada por recencia desses erros e <strong>{result.bias_margin:+.1f} pp</strong>. Na variante
+    "com correcao", a margem projetada entre os dois lideres e deslocada por esse valor (metade para cada lado) antes da
+    simulacao. E uma escolha de julgamento: com poucas eleicoes, o vies pode nao se repetir.</p>
+    {_bias_table(result)}
     <h3>Ressalvas</h3>
     <ul>
-      <li>A calibracao usa poucos pontos historicos (2022, dois turnos). As disputas presidenciais de 2018 estao
-          mal casadas na base e foram excluidas.</li>
+      <li>A calibracao usa 12 disputas historicas (2002-2022, dois turnos). Eleicoes antigas pesam menos, mas
+          candidatos, institutos e metodos mudaram muito no periodo.</li>
       <li>Institutos ausentes do agregador do Poder360 nao entram (ex.: Verita, Palver, DataTrends, Indexa).</li>
       <li>O modelo nao estima efeito sistematico por instituto (house effect) nem tendencia; a media movel
           e apenas descritiva.</li>

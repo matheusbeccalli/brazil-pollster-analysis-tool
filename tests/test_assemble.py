@@ -92,3 +92,44 @@ def test_assemble_excludes_condicao_1_rows_from_rebase(tmp_data_dir):
     con.close()
     # 48 / (48 + 34 + 8 + 6) * 100 = 50.0 — the blank/null row must not be in the denominator
     assert abs(row[0] - 50.0) < 1e-6
+
+
+def test_assemble_uses_backend_presidential_polls_and_drops_bdd_national_rows(loaded_db):
+    import pandas as pd
+    from pollster.utils.poder360 import polls_to_frame
+    raw = [{"id": 5, "instituto": "Datafolha", "data": "2022-10-01", "contratante": "Folha",
+            "entrevistas": 8000, "margem": 2, "registro": "BR-9",
+            "apuracoes": [[{"nome": "Lula", "partido": "PT", "percentual": 50},
+                           {"nome": "Jair Bolsonaro", "partido": "PL", "percentual": 36},
+                           {"nome": "brancos / nulos", "partido": "N/A", "percentual": 14}]]}]
+    long = polls_to_frame(raw, turno=1)
+    long.insert(0, "ano", 2022)
+    con = get_connection(loaded_db)
+    con.execute("CREATE TABLE poder360_presidential AS SELECT * FROM long")
+    assemble_data(con)
+    rows = con.execute(
+        "SELECT pollster_display_name, candidate_1_poll_raw_pct, sample_size FROM polls_vs_actual "
+        "WHERE year=2022 AND round=1 ORDER BY 1").fetchdf()
+    con.close()
+    # Datafolha comes from the backend table (50%, n=8000), not from the Base dos Dados fixture (48%);
+    # AtlasIntel exists only in Base dos Dados national rows and is therefore dropped.
+    assert rows["pollster_display_name"].tolist() == ["Datafolha"]
+    assert rows.iloc[0]["candidate_1_poll_raw_pct"] == 50.0
+    assert rows.iloc[0]["sample_size"] == 8000
+
+
+def test_assemble_ignores_final_polls_older_than_max_days(loaded_db, monkeypatch):
+    import pandas as pd
+    from pollster import config
+    monkeypatch.setattr(config, "FINAL_POLL_MAX_DAYS", 30)
+    parquet_dir = loaded_db / "parquet"
+    polls = pd.read_parquet(parquet_dir / "poder360_pesquisas.parquet")
+    # AtlasIntel's only poll becomes a February poll: too old to count as a "final" poll
+    polls.loc[polls["instituto"] == "AtlasIntel", "data"] = pd.Timestamp("2022-02-01")
+    polls.to_parquet(parquet_dir / "poder360_pesquisas.parquet")
+    con = get_connection(loaded_db)
+    register_parquet(con, "poder360_polls", parquet_dir / "poder360_pesquisas.parquet")
+    assemble_data(con)
+    names = con.execute("SELECT pollster_display_name FROM polls_vs_actual").fetchdf()["pollster_display_name"].tolist()
+    con.close()
+    assert names == ["Datafolha"]

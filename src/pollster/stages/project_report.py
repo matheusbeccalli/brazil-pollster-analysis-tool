@@ -165,6 +165,7 @@ def _polls_table(rp: RoundProjection) -> str:
     meta = meta.rename(columns={"EAM_2022": "EAM 2022", "w_acc": "Peso precisao",
                                 "w_rec": "Peso recencia", "w_n": "Peso amostra"})
     meta["Amostra"] = meta["Amostra"].map(lambda v: f"{int(v):,}".replace(",", ".") if pd.notna(v) else "")
+    meta["EAM 2022"] = meta["EAM 2022"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "")
     return _render_table(meta)
 
 

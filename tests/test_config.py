@@ -29,3 +29,12 @@ def test_2026_election_dates_and_aliases():
     assert ELECTIONS[2026]["round_2"] == date(2026, 10, 25)
     assert POLLSTER_ALIASES_2026["AtlasIntel"] == "AtlasIntel/Internet"
     assert PODER360_AGREGADOR_URL.startswith("https://monitor-agregador.poder360.com.br")
+
+
+def test_prediction_market_sources():
+    from pollster.config import (POLYMARKET_EVENT_SLUGS, KALSHI_SERIES_TICKERS,
+                                 POLYMARKET_GAMMA_URL, POLYMARKET_CLOB_URL, KALSHI_API_URL)
+    assert "brazil-presidential-election" in POLYMARKET_EVENT_SLUGS
+    assert "KXBRPRES" in KALSHI_SERIES_TICKERS
+    assert POLYMARKET_GAMMA_URL.startswith("https://") and POLYMARKET_CLOB_URL.startswith("https://")
+    assert KALSHI_API_URL.endswith("/trade-api/v2")

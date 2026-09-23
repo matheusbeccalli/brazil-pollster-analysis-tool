@@ -105,3 +105,31 @@ PROJECTION_SEED = 2026
 PROJECTION_RUNOFF_PAIR = ("Lula", "Flávio Bolsonaro")
 PROJECTION_HISTORY_YEARS = (2022,)     # 2018 presidential rows are mis-matched; excluded
 PROJECTION_MIN_SCENARIO_TOTAL = 85.0   # scenarios summing less are incomplete API rows
+
+# --- Prediction markets (storage only; not used by the analysis) --------------
+
+POLYMARKET_GAMMA_URL = "https://gamma-api.polymarket.com"
+POLYMARKET_CLOB_URL = "https://clob.polymarket.com"
+# Event slugs verified on 2026-09-23 (gamma-api /events/slug/{slug}).
+POLYMARKET_EVENT_SLUGS: list[str] = [
+    "brazil-presidential-election",
+    "brazil-presidential-election-first-round-winner",
+    "brazil-presidential-election-first-round-2nd-place",
+    "brazil-presidential-election-first-round-3rd-place",
+    "which-candidates-will-advance-to-brazils-presidential-runoff",
+    "will-any-presidential-candidate-win-outright-in-the-first-round-of-the-brazil-election",
+    "brazil-presidential-election-first-round-lula-da-silva-vote-share",
+    "who-will-trump-endorse-for-president-of-brazil-20260803210809",
+    "lula-participates-in-debate-before-first-round",
+    "will-the-workers-party-nominate-lula-for-president-of-brazil-by-august-15",
+]
+
+KALSHI_API_URL = "https://api.elections.kalshi.com/trade-api/v2"
+# Series tickers verified on 2026-09-23 (all open Brazil-election series).
+KALSHI_SERIES_TICKERS: list[str] = [
+    "KXBRPRES", "KXBRPRES1R", "KXBRAZILPRES1R", "KXBRPRESADVANCE", "KXBRPRES1MOV",
+    "KXBRPRESIDENT2", "KXBRPRESIDENT3", "KXBRPRESIDENT4", "KXBRPRESIDENT5",
+    "KXVOTEBR1", "KXBRBALLOT", "KXTRUMPFLAVIO",
+    "KXBRSENMOSTSEATS", "KXBRAZILSENATE", "KXBRDEP", "KXBRGOVMOSTSEATS", "KXDFGOV",
+]
+KALSHI_HISTORY_START = date(2025, 1, 1)

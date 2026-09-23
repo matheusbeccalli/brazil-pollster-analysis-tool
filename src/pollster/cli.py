@@ -27,6 +27,15 @@ def fetch_2026_cmd(force):
     fetch_2026(pathlib.Path(config.DATA_DIR_NAME), force=force)
 
 
+@cli.command("fetch-markets")
+@click.option("--as-of", "as_of", type=click.DateTime(formats=["%Y-%m-%d"]), default=None,
+              help="Snapshot date used for the raw JSON folder (default: today).")
+def fetch_markets_cmd(as_of):
+    """Store Kalshi and Polymarket markets on the Brazilian election (raw JSON + tables)."""
+    from pollster.stages.fetch_markets import fetch_markets
+    fetch_markets(pathlib.Path(config.DATA_DIR_NAME), as_of=as_of.date() if as_of else None)
+
+
 @cli.command()
 def assemble():
     """Build unified polls-vs-actual dataset."""

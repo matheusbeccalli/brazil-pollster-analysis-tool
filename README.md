@@ -58,7 +58,7 @@ Apos a instalacao, o comando `pollster` estara disponivel no terminal (enquanto 
 pollster --help
 ```
 
-Deve mostrar os subcomandos disponiveis: `fetch`, `fetch-2026`, `assemble`, `analyze`, `report`, `project`, `run`, `query`.
+Deve mostrar os subcomandos disponiveis: `fetch`, `fetch-2026`, `fetch-markets`, `assemble`, `analyze`, `report`, `project`, `run`, `query`.
 
 ## Como Executar
 
@@ -199,6 +199,8 @@ pollster query --format parquet --output resultado.parquet "SELECT * FROM poll_l
 | `polls_2026` | Pesquisas presidenciais de 2026 (Poder360 agregador) |
 | `projection_2026_summary` | Projecao por candidato e turno |
 | `projection_2026_polls` | Pesquisas e pesos usados na projecao |
+| `pm_markets` | Mercados de previsao (Kalshi, Polymarket) sobre a eleicao |
+| `pm_prices_daily` | Historico diario de precos dos mercados |
 
 ## Arquivos de Saida
 
@@ -231,6 +233,7 @@ src/pollster/
 ├── stages/
 │   ├── fetch.py        # Etapa 1: download do Base dos Dados via BigQuery
 │   ├── fetch2026.py    # Pesquisas 2026 do agregador do Poder360
+│   ├── fetch_markets.py # Mercados de previsao (Kalshi, Polymarket), so armazenamento
 │   ├── project.py      # Projecao 2026: pesos, media ponderada, Monte Carlo
 │   ├── project_report.py # Relatorio HTML da projecao
 │   ├── assemble.py     # Etapa 2: cruzamento pesquisas x resultados
@@ -276,6 +279,31 @@ validos; media ponderada por precisao historica (EAM presidencial de 2022 deste 
 (`exp(-idade/7)`) e amostra (`sqrt(n/2000)`); 10.000 simulacoes Monte Carlo com choque na margem
 entre os dois lideres (`sigma` = maior entre 3 pp e o RMSE historico da media dos institutos).
 Institutos sem historico recebem o peso mediano. Uso pessoal, nao e previsao profissional.
+
+## Mercados de Previsao (Kalshi e Polymarket)
+
+Armazenamento apenas: nada na analise ou nos relatorios usa esses dados por enquanto.
+Guardamos os mercados sobre a eleicao brasileira de 2026 e o historico diario de precos
+(probabilidades) das duas plataformas, via APIs publicas sem login.
+
+```bash
+pollster fetch-markets                  # baixa tudo de novo (historico e retroativo) e substitui as tabelas
+pollster fetch-markets --as-of 2026-09-23   # nome da pasta do snapshot bruto
+```
+
+Saidas:
+
+- `data/raw/prediction_markets/<data>/` — JSON bruto de cada evento/serie/historico (para reparsear no futuro)
+- `pm_markets` — uma linha por mercado (plataforma, evento, pergunta, desfecho, status, resultado, preco atual, volume)
+- `pm_prices_daily` — uma linha por mercado e dia (preco de fechamento = probabilidade; na Kalshi tambem abertura/max/min, bid/ask, volume e open interest)
+
+Os eventos (Polymarket) e as series (Kalshi) coletados estao listados em `config.py`
+(`POLYMARKET_EVENT_SLUGS`, `KALSHI_SERIES_TICKERS`); basta acrescentar novos para ciclos futuros.
+
+```bash
+pollster query "SELECT platform, outcome, last_price FROM pm_markets
+                WHERE event_id IN ('brazil-presidential-election','KXBRPRES-26') ORDER BY last_price DESC"
+```
 
 ## Adicionando Uma Nova Eleicao (ex: 2026)
 

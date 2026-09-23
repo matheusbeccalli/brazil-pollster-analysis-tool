@@ -64,3 +64,31 @@ def test_assemble_candidate_matching(loaded_db):
     assert "LULA" in row[0].upper() or "LUIZ" in row[0].upper()
     assert "BOLSONARO" in row[1].upper() or "JAIR" in row[1].upper()
     con.close()
+
+
+def test_assemble_excludes_condicao_1_rows_from_rebase(tmp_data_dir):
+    import pandas as pd
+    parquet_dir = tmp_data_dir / "parquet"
+    polls_df = make_polls_df()
+    extra = polls_df.iloc[[0]].copy()
+    extra["nome_candidato"] = "brancos / nulos"
+    extra["sigla_partido"] = None
+    extra["condicao"] = 1
+    extra["percentual"] = 20.0
+    polls_df = pd.concat([polls_df, extra], ignore_index=True)
+    polls_df.to_parquet(parquet_dir / "poder360_pesquisas.parquet")
+    make_results_df().to_parquet(parquet_dir / "tse_resultados_candidato.parquet")
+    make_candidates_df().to_parquet(parquet_dir / "tse_candidatos.parquet")
+
+    con = get_connection(tmp_data_dir)
+    register_parquet(con, "poder360_polls", parquet_dir / "poder360_pesquisas.parquet")
+    register_parquet(con, "tse_results", parquet_dir / "tse_resultados_candidato.parquet")
+    register_parquet(con, "tse_candidates", parquet_dir / "tse_candidatos.parquet")
+    assemble_data(con)
+    row = con.execute(
+        "SELECT candidate_1_poll_valid_pct FROM polls_vs_actual "
+        "WHERE pollster_display_name = 'Datafolha'"
+    ).fetchone()
+    con.close()
+    # 48 / (48 + 34 + 8 + 6) * 100 = 50.0 — the blank/null row must not be in the denominator
+    assert abs(row[0] - 50.0) < 1e-6

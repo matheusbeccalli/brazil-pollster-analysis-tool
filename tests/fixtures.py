@@ -21,7 +21,7 @@ def make_polls_df():
             "tipo": "estimulada", "tipo_voto": None,
             "descricao_cenario": "cenario 1",
             "nome_candidato": cand, "sigla_partido": party,
-            "condicao": 1, "percentual": pct,
+            "condicao": 0, "percentual": pct,
         })
     # AtlasIntel poll - 2022-10-01 (also before R1)
     for cand, party, pct in [("LULA", "PT", 50.5), ("BOLSONARO", "PL", 36.2),
@@ -39,7 +39,7 @@ def make_polls_df():
             "tipo": "estimulada", "tipo_voto": None,
             "descricao_cenario": "cenario 1",
             "nome_candidato": cand, "sigla_partido": party,
-            "condicao": 1, "percentual": pct,
+            "condicao": 0, "percentual": pct,
         })
     return pd.DataFrame(rows)
 

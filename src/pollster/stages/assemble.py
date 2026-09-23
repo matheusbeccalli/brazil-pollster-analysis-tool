@@ -52,6 +52,10 @@ def _build_actual_results(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 def _select_final_polls(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     polls = con.execute("SELECT * FROM poder360_polls").fetchdf()
     polls["data"] = pd.to_datetime(polls["data"])
+    # condicao = 1 marks non-candidate rows (undecided, blank/null, "others");
+    # they must not enter scenario selection nor the valid-vote rebase.
+    if "condicao" in polls.columns:
+        polls = polls[polls["condicao"].isna() | (polls["condicao"] == 0)]
     _normalize_uf(polls)
 
     rows = []
